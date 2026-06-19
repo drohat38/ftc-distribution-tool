@@ -33,8 +33,13 @@ phases in [`PRD.md`](PRD.md) §10 and the schema in
 - **Database:** Google Sheets, in a **separate workbook** from the public Events sheet.
 - **Admin app:** Google Apps Script via [`clasp`](https://github.com/google/clasp),
   running inside the sheet (`apps-script/`).
-- **Private map:** an Apps Script web app, gated by Google sign-in (reads
-  Partners + Links server-side; never published publicly).
+- **Public distribution map (Phase 3b, what shipped):** a self-contained
+  `src/index.html` on its own Cloudflare Pages project, reading the published
+  non-contact CSVs (`Partners_Public` / `Links_Public` / `Events_Reference`).
+  See [`docs/PUBLIC_MAP.md`](docs/PUBLIC_MAP.md).
+- **Private gated map (PRD §4, not yet built):** the planned Apps Script web app
+  gated by Google sign-in (full internal view, contacts included). Remains the
+  model for the full internal view; no `doGet` web app exists yet.
 
 Do **not** introduce Supabase, Airtable, or Salesforce. This is the Tier A build.
 
@@ -46,15 +51,20 @@ Do **not** introduce Supabase, Airtable, or Salesforce. This is the Tier A build
 ├── CLAUDE.md              # Just @AGENTS.md
 ├── PRD.md                 # Product requirements — the what & why
 ├── CHANGELOG.md           # Keep current with every meaningful change
-├── apps-script/           # clasp project — Apps Script admin app + web app
-│   ├── appsscript.json    # Apps Script manifest
-│   ├── Code.gs            # Entry-point stub (no features yet)
+├── apps-script/           # clasp project — Apps Script admin app (bound to the Partners workbook)
+│   ├── appsscript.json    # Manifest: sheets, geocoder/UrlFetch, UI, mail, scriptapp, forms scopes
+│   ├── Code.gs            # Admin logic: setup, Add/Edit Partner, links, public view, capacity check
+│   ├── AddPartnerDialog.html / EditPartnerDialog.html             # Phase 2b — add/edit + geocode
+│   ├── LinkPartnerDialog.html / ViewLinksDialog.html              # Phase 3a — event↔partner links
+│   ├── RunCapacityCheckDialog.html / ViewCapacityStatusDialog.html# Phase 4 — capacity check
 │   └── .clasp.json.example# Copy to .clasp.json and add your scriptId
 ├── docs/
-│   └── DATA_MODEL.md      # Column-by-column schema: Partners, Links, Events
+│   ├── DATA_MODEL.md      # Column-by-column schema: Partners, Links, Events, public tabs, CapacityChecks
+│   └── PUBLIC_MAP.md      # Phase 3b deploy guide (published CSVs + Cloudflare Pages)
 ├── reference/
 │   └── events-sample.csv  # Read-only sample of the event-map Events schema
-├── src/                   # Reserved (empty)
+├── src/
+│   └── index.html         # Phase 3b public distribution map (reads the 3 published CSVs)
 └── .githooks/
     └── post-commit        # Auto-pushes to origin/main after each commit
 ```
@@ -86,8 +96,11 @@ clasp clone <scriptId>           # get the scriptId from the project owner
 clasp push                       # deploy Code.gs + appsscript.json
 ```
 
-Then, in the sheet: **FTC → Set up sheets** to build the `Partners` and
-`EventPartnerLinks` tabs.
+Then, in the sheet: **FTC → Set up sheets** to build the `Partners`,
+`EventPartnerLinks`, and `CapacityChecks` tabs. The full `FTC` menu also covers
+Add/Edit Partner, Refresh Events, Link Partner to Event(s), View Links, Run
+Capacity Check, View Capacity Status, and Rebuild public view. To deploy the
+public map, follow [`docs/PUBLIC_MAP.md`](docs/PUBLIC_MAP.md).
 
 `.clasp.json` and `.clasprc.json` are gitignored — they hold your project
 binding and credentials. `apps-script/.clasp.json.example` shows the shape.

@@ -6,6 +6,18 @@ project will adopt [Semantic Versioning](https://semver.org/) once it ships.
 
 ## [Unreleased]
 
+### Changed — Phase 3.5: docs reconcile (no features)
+- Re-synced `README.md` to the actual build: the Repository layout now lists the
+  six Apps Script files (`Code.gs` + the six HTML dialogs), `docs/PUBLIC_MAP.md`,
+  and `src/index.html` (no longer "stub" / "reserved (empty)"); the Stack section
+  now describes the shipped **public** distribution map (Phase 3b) and notes the
+  gated private map (PRD §4) is **not yet built** (no `doGet` web app); Setup now
+  names the `CapacityChecks` tab, the full `FTC` menu, and the public-map deploy
+  guide. Verified the 3b path end to end: `rebuildPublicView()` emits only the
+  non-contact `Partners_Public` / `Links_Public` subset (contacts, `agreement_*`,
+  `last_verified` excluded) and `src/index.html` reads the three published CSVs.
+  No code changed.
+
 ### Added — Phase 4: Pre-event capacity check (Apps Script)
 
 The week-before-an-event workflow that confirms each linked partner can absorb
