@@ -6,6 +6,51 @@ project will adopt [Semantic Versioning](https://semver.org/) once it ships.
 
 ## [Unreleased]
 
+### Added — Phase 3b: Public distribution map (published CSVs, Cloudflare Pages)
+
+> **Privacy-wall decision (2026-06-19).** Dev explicitly chose "go fully public as
+> written," a scoped, deliberate override of AGENTS.md hard rule #1 / PRD §4. The
+> public map publishes only a NON-CONTACT subset of partner data + the
+> event↔partner links. Contact fields, `agreement_on_file`/`agreement_date`, and
+> `last_verified` are still never published. AGENTS.md #1, PRD §4, and
+> `docs/DATA_MODEL.md` were amended to record the carve-out.
+
+- **Rebuild public view** (`rebuildPublicView()` in `apps-script/Code.gs`, new
+  `FTC ▸ Rebuild public view` menu item) — regenerates two new tabs from the
+  private data:
+  - `Partners_Public` — one row per partner, NON-CONTACT subset only:
+    `PartnerID`, `organization_name`, `city`, `address`, `latitude`, `longitude`,
+    `pathway`, `cold_storage`, `monthly_capacity_meals`, `recurring_slot`,
+    `partnership_status`. Contact name/phone/email, `agreement_on_file`,
+    `agreement_date`, and `last_verified` are deliberately excluded.
+  - `Links_Public` — `PartnerID`, `EventID`, `active` (normalized `TRUE`/`FALSE`).
+    Only links whose partner is in the public set AND whose event exists in
+    `Events_Reference` are emitted; `last_capacity_confirmed` and per-link
+    `recurring_slot` stay internal.
+
+  Both tabs are fully rebuilt each run, navy-styled (distinct from the orange
+  internal tabs), and carry a warning-only protection + header note. The human
+  publishes each to web as CSV; those URLs go into `src/index.html`.
+- **`src/index.html`** — the public distribution map. A single self-contained HTML
+  file (mirrors the event map's structure, Maps init, key bootstrap, and
+  CSV-load/error patterns), deployed on its OWN Cloudflare Pages project. Reads
+  the three published CSVs by URL (`Partners_Public`, `Links_Public`,
+  `Events_Reference` — the last defaults to the event map's existing public Events
+  CSV). Renders: navy teardrop **event** pins + flat-disc **partner** pins
+  (visually distinct shapes), a line from each event to every linked partner
+  (active solid navy / inactive dashed gray), partners colored by `pathway` (orange
+  = same-day, teal = hold-redistribute) with `partnership_status` shown via the
+  ring (solid = active, dashed = candidate, faded = paused). Click a partner → its
+  public fields + the food-safety pathway note + its linked events; click an event
+  → its receiving partners. Selecting highlights that entity's links in orange.
+  Brand colors `#FF6500` / `#003366`. Maps key via the `?k=` param or a blank
+  `FALLBACK_KEY` (paste the event map's existing referrer-restricted key — no new
+  key generated or hardcoded). Auto-refreshes every 10 min; graceful loading /
+  error / key-missing / setup-needed overlays.
+- **`docs/PUBLIC_MAP.md`** — deploy guide: the Apps Script publish steps, the three
+  expected published-CSV URLs, the separate Cloudflare Pages project setup, and the
+  Maps-key referrer step.
+
 ### Added — Phase 3a: Link partners to events (the join)
 - **Refresh Events** (`refreshEvents()` in `apps-script/Code.gs`) — fetches the
   public event-map's published Events CSV (`CONFIG.EVENTS_CSV_URL`, the same URL

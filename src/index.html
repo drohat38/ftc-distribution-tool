@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Same referrer policy as the event map: Google sees the *.pages.dev origin. -->
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>Feed the City — Distribution Map</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Roboto:wght@300;400;500;700;900&display=swap"
+    rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --orange: #FF6500;   /* brand orange — same-day pathway */
+      --orange-dk: #D4541A;
+      --navy: #003366;     /* brand navy — events */
+      --teal: #0E7C7B;     /* hold-redistribute pathway (cold/hold) */
+      --gray: #9aa0a6;     /* paused / unknown */
+      --ink: #202124;
+      --ink2: #3c4043;
+      --ink3: #5f6368;
+      --border: #dadce0;
+      --bg: #f1f3f4;
+      --white: #fff;
+      --shadow-1: 0 1px 2px rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15);
+      --shadow-2: 0 2px 6px rgba(60,64,67,.28), 0 4px 12px rgba(60,64,67,.16);
+    }
+
+    html, body {
+      height: 100%; font-family: "Roboto", Arial, sans-serif;
+      overflow: hidden; background: #e8eaed; color: var(--ink);
+    }
+    button { font-family: inherit; font-size: inherit; cursor: pointer; }
+    a { color: var(--navy); }
+
+    #map {
+      position: fixed; inset: 0; width: 100vw; height: 100vh;
+      background: #e8eaed; z-index: 0;
+    }
+
+    /* ---- Top brand bar ---- */
+    #topbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 14px; background: var(--navy); color: #fff;
+      box-shadow: var(--shadow-1);
+    }
+    #topbar .logo {
+      width: 40px; height: 40px; border-radius: 8px; background: var(--orange);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    #topbar h1 { font-family: "Anton", sans-serif; font-weight: 400;
+      font-size: 18px; letter-spacing: .5px; line-height: 1; }
+    #topbar .sub { font-size: 11.5px; color: #cfe0f2; margin-top: 2px; }
+    #topbar .spacer { flex: 1; }
+    #badge {
+      font-size: 12px; background: rgba(255,255,255,.14); color: #fff;
+      padding: 5px 11px; border-radius: 999px; white-space: nowrap;
+    }
+    #refresh-btn {
+      background: var(--orange); color: #fff; border: 0; border-radius: 8px;
+      padding: 7px 12px; font-weight: 500; font-size: 12.5px;
+    }
+    #refresh-btn:hover { background: var(--orange-dk); }
+    #internal-tag {
+      font-size: 10.5px; font-weight: 700; letter-spacing: .6px;
+      background: var(--orange); color: #fff; padding: 3px 8px; border-radius: 6px;
+    }
+
+    /* ---- Legend card (bottom-left) ---- */
+    #legend {
+      position: fixed; left: 14px; bottom: 14px; z-index: 150;
+      background: #fff; border-radius: 12px; box-shadow: var(--shadow-2);
+      padding: 12px 14px; max-width: 270px; font-size: 12.5px; color: var(--ink2);
+    }
+    #legend h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px;
+      color: var(--ink3); margin-bottom: 8px; }
+    .leg-row { display: flex; align-items: center; gap: 9px; margin: 6px 0; }
+    .leg-swatch { width: 18px; height: 18px; flex-shrink: 0; display: flex;
+      align-items: center; justify-content: center; }
+    .leg-dot { width: 14px; height: 14px; border-radius: 50%; }
+    .leg-line { width: 18px; height: 0; border-top: 3px solid var(--navy); }
+    .leg-line.dash { border-top-style: dashed; border-color: var(--gray); }
+    #legend .sec { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--border); }
+    #legend .hint { color: var(--ink3); font-size: 11.5px; margin-top: 8px; }
+    #legend .collapse {
+      position: absolute; top: 8px; right: 10px; background: none; border: 0;
+      color: var(--ink3); font-size: 18px; line-height: 1; padding: 2px;
+    }
+    #legend.min .leg-body { display: none; }
+    #legend.min { padding-bottom: 12px; }
+
+    /* ---- Info windows ---- */
+    .iw { font-family: "Roboto", Arial, sans-serif; max-width: 290px; }
+    .iw-hd { padding: 2px 2px 8px; border-bottom: 1px solid var(--border); }
+    .iw-kind { font-size: 10.5px; font-weight: 700; letter-spacing: .6px;
+      text-transform: uppercase; }
+    .iw-kind.ev { color: var(--navy); }
+    .iw-kind.pt { color: var(--orange); }
+    .iw-name { font-size: 15.5px; font-weight: 700; color: var(--ink); margin-top: 3px; }
+    .iw-sub { font-size: 12.5px; color: var(--ink3); margin-top: 2px; }
+    .iw-body { padding: 9px 2px 2px; }
+    .iw-row { display: flex; gap: 7px; margin: 5px 0; font-size: 12.5px; color: var(--ink2); }
+    .iw-row .k { color: var(--ink3); min-width: 86px; flex-shrink: 0; }
+    .pill { display: inline-block; font-size: 11px; font-weight: 600;
+      padding: 2px 8px; border-radius: 999px; color: #fff; }
+    .pill.same-day { background: var(--orange); }
+    .pill.hold { background: var(--teal); }
+    .pill.active { background: #1e8e3e; }
+    .pill.candidate { background: var(--navy); }
+    .pill.paused { background: var(--gray); }
+    .iw-note {
+      margin-top: 8px; padding: 7px 9px; background: #e6f4f3; border-left: 3px solid var(--teal);
+      border-radius: 4px; font-size: 11.5px; color: #0a5453; line-height: 1.45;
+    }
+    .iw-note.warn { background: #fef3e8; border-left-color: var(--orange); color: #8a3d00; }
+    .iw-links { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .iw-links h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+      color: var(--ink3); margin-bottom: 5px; }
+    .iw-links ul { list-style: none; }
+    .iw-links li { font-size: 12.5px; color: var(--ink2); padding: 3px 0;
+      display: flex; align-items: center; gap: 6px; }
+    .iw-links li .lk-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .iw-links .none { color: var(--ink3); font-style: italic; font-size: 12px; }
+    .iw-links .inactive { opacity: .55; }
+
+    /* ---- Overlay messages (loading / error) ---- */
+    #overlay {
+      position: fixed; inset: 0; z-index: 300; display: none;
+      align-items: center; justify-content: center; background: rgba(241,243,244,.96);
+    }
+    #overlay.show { display: flex; }
+    #overlay .card {
+      background: #fff; border-radius: 16px; box-shadow: var(--shadow-2);
+      padding: 28px 30px; max-width: 420px; text-align: center;
+    }
+    #overlay h2 { font-size: 17px; color: var(--ink); margin-bottom: 8px; }
+    #overlay p { font-size: 13.5px; color: var(--ink3); line-height: 1.6; margin-bottom: 6px; }
+    #overlay code { background: var(--bg); padding: 1px 5px; border-radius: 4px;
+      font-size: 12px; word-break: break-all; }
+    #overlay .spin {
+      width: 38px; height: 38px; border: 4px solid var(--bg); border-top-color: var(--orange);
+      border-radius: 50%; margin: 0 auto 16px; animation: sp 1s linear infinite;
+    }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    #overlay button {
+      margin-top: 14px; background: var(--orange); color: #fff; border: 0;
+      border-radius: 8px; padding: 9px 18px; font-weight: 500;
+    }
+
+    @media (max-width: 560px) {
+      #topbar h1 { font-size: 15px; }
+      #legend { max-width: 220px; font-size: 12px; left: 8px; bottom: 8px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <div id="topbar">
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff" aria-hidden="true">
+        <path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Feed the City — Distribution Map</h1>
+      <div class="sub">Events &rarr; partner orgs that receive the food</div>
+    </div>
+    <div class="spacer"></div>
+    <span id="internal-tag">INTERNAL</span>
+    <span id="badge">Loading…</span>
+    <button id="refresh-btn" type="button">Refresh</button>
+  </div>
+
+  <div id="legend">
+    <button class="collapse" id="legend-toggle" type="button" title="Collapse">–</button>
+    <div class="leg-body">
+      <h2>Legend</h2>
+      <div class="leg-row"><span class="leg-swatch"><svg width="14" height="18" viewBox="0 0 36 46"><path d="M18 2C9.7 2 3 8.7 3 17c0 11 15 27 15 27s15-16 15-27C33 8.7 26.3 2 18 2z" fill="#003366"/><circle cx="18" cy="17" r="6" fill="#fff"/></svg></span> Event (where food is made)</div>
+      <div class="sec">
+        <div class="leg-row"><span class="leg-swatch"><span class="leg-dot" style="background:var(--orange)"></span></span> Partner — <b style="margin-left:3px">same-day</b></div>
+        <div class="leg-row"><span class="leg-swatch"><span class="leg-dot" style="background:var(--teal)"></span></span> Partner — <b style="margin-left:3px">hold &amp; redistribute</b></div>
+      </div>
+      <div class="sec">
+        <div class="leg-row"><span class="leg-swatch"><span class="leg-dot" style="background:var(--orange);border:3px solid #fff;box-shadow:0 0 0 1px #888"></span></span> Active</div>
+        <div class="leg-row"><span class="leg-swatch"><span class="leg-dot" style="background:var(--orange);border:3px dashed #fff;box-shadow:0 0 0 1px #888"></span></span> Candidate</div>
+        <div class="leg-row"><span class="leg-swatch"><span class="leg-dot" style="background:var(--orange);opacity:.5"></span></span> Paused</div>
+      </div>
+      <div class="sec">
+        <div class="leg-row"><span class="leg-swatch"><span class="leg-line"></span></span> Active link</div>
+        <div class="leg-row"><span class="leg-swatch"><span class="leg-line dash"></span></span> Inactive link</div>
+      </div>
+      <div class="hint">Click a pin to see its details and connections.</div>
+    </div>
+  </div>
+
+  <div id="overlay">
+    <div class="card" id="overlay-card"></div>
+  </div>
+
+  <script>
+    "use strict";
+
+    /* ====================================================================
+       CONFIG — published CSV URLs.
+
+       Generate Partners_Public + Links_Public in the Partners workbook with
+       "FTC ▸ Rebuild public view", then File ▸ Share ▸ Publish to web ▸ pick
+       the tab ▸ CSV, and paste each URL below. Events_Reference is published
+       the same way (or leave EVENTS_CSV on the event map's existing CSV —
+       it's the same public event data).
+       ==================================================================== */
+    const CONFIG = {
+      // Partners_Public published-to-web CSV (NON-CONTACT subset). REQUIRED.
+      PARTNERS_CSV: "PASTE_PARTNERS_PUBLIC_CSV_URL_HERE",
+
+      // Links_Public published-to-web CSV (PartnerID/EventID/active). REQUIRED.
+      LINKS_CSV: "PASTE_LINKS_PUBLIC_CSV_URL_HERE",
+
+      // Event pins. Defaults to the event map's already-published Events CSV
+      // (same public data, no extra publish step). To use this workbook's own
+      // Events_Reference instead, publish that tab and paste its CSV URL here.
+      EVENTS_CSV: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSYstAMLbxJyPYit_JRhg1mHFhD_EIsM4Znp8Joy_cY5fhNOlZOI4p-lC2VomCKM4S5mTcemkZiAcDM/pub?gid=0&single=true&output=csv",
+
+      REFRESH_MS: 10 * 60 * 1000   // auto-refresh every 10 minutes
+    };
+
+    const COLORS = {
+      navy: "#003366", orange: "#FF6500", teal: "#0E7C7B", gray: "#9aa0a6"
+    };
+
+    // ---- State ----
+    let map, infoWindow;
+    let partners = [], events = [], links = [];
+    let partnersById = {}, eventsById = {};
+    let polylines = [];           // { line, eventId, partnerId, active }
+    let selected = null;          // { kind, id }
+    let refreshTimer = null;
+
+    // ---- Small helpers ----
+    function esc(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g, c => (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+      ));
+    }
+    function num(v) { const n = parseFloat(v); return isFinite(n) ? n : NaN; }
+    function truthy(v) {
+      return v === true || ["true", "yes", "on", "1", "active"].indexOf(String(v).trim().toLowerCase()) !== -1;
+    }
+    function isPlaceholder(u) { return !u || /PASTE_/.test(u) || !/^https?:/.test(u); }
+
+    // ---- CSV fetch (Papa, with a Google Sheets gviz fallback for file://) ----
+    function fetchCsv(url) {
+      const bust = url + (url.indexOf("?") === -1 ? "?" : "&") + "_=" + Date.now();
+      return fetch(bust, { mode: "cors", cache: "no-store" })
+        .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+        .then(text => Papa.parse(text, { header: true, skipEmptyLines: true }).data);
+    }
+
+    // =====================================================================
+    // Marker icons — events and partners are deliberately different SHAPES.
+    // =====================================================================
+
+    // Event = navy teardrop pin (gray when paused). Same silhouette as the
+    // event map so the two tools read as a family.
+    function eventIcon(paused, big) {
+      const color = paused ? COLORS.gray : COLORS.navy;
+      const scale = big ? 1.3 : 1;
+      const w = Math.round(30 * scale), h = Math.round(39 * scale);
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 36 46">' +
+        '<defs><filter id="s" x="-30%" y="-20%" width="160%" height="150%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,.35)"/></filter></defs>' +
+        '<g filter="url(#s)"><path d="M18 2C9.7 2 3 8.7 3 17c0 11 15 27 15 27s15-16 15-27C33 8.7 26.3 2 18 2z" fill="' + color + '" stroke="rgba(0,0,0,.15)"/>' +
+        '<circle cx="18" cy="17" r="7" fill="#fff"/><circle cx="18" cy="17" r="3.4" fill="' + color + '"/></g></svg>';
+      return {
+        url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg),
+        scaledSize: new google.maps.Size(w, h),
+        anchor: new google.maps.Point(w / 2, h)
+      };
+    }
+
+    // Partner = flat disc. Fill = pathway; ring + opacity = partnership_status.
+    function partnerIcon(pathway, status, big) {
+      const fill = pathway === "hold-redistribute" ? COLORS.teal : COLORS.orange;
+      const st = String(status || "").toLowerCase();
+      const opacity = st === "paused" ? 0.5 : 1;
+      const ringColor = st === "paused" ? COLORS.gray : "#ffffff";
+      const dash = st === "candidate" ? ' stroke-dasharray="3.5 2.8"' : "";
+      const scale = big ? 1.3 : 1;
+      const s = Math.round(28 * scale);     // svg box
+      const c = 14, r = 9;
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + s + '" height="' + s + '" viewBox="0 0 28 28">' +
+        '<defs><filter id="d" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.6" flood-color="rgba(0,0,0,.4)"/></filter></defs>' +
+        '<g filter="url(#d)" opacity="' + opacity + '">' +
+        '<circle cx="' + c + '" cy="' + c + '" r="' + (r + 1.5) + '" fill="rgba(0,0,0,.18)"/>' +
+        '<circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="' + fill + '" stroke="' + ringColor + '" stroke-width="3"' + dash + '/>' +
+        '</g></svg>';
+      return {
+        url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg),
+        scaledSize: new google.maps.Size(s, s),
+        anchor: new google.maps.Point(s / 2, s / 2)
+      };
+    }
+
+    // =====================================================================
+    // Data parsing
+    // =====================================================================
+    function buildPartners(rows) {
+      const out = [];
+      (rows || []).forEach(r => {
+        const id = String(r.PartnerID || "").trim();
+        const name = String(r.organization_name || "").trim();
+        if (!id || !name) return;
+        const lat = num(r.latitude), lng = num(r.longitude);
+        out.push({
+          id, name,
+          city: String(r.city || "").trim(),
+          address: String(r.address || "").trim(),
+          lat, lng,
+          pathway: String(r.pathway || "").trim().toLowerCase(),
+          coldStorage: String(r.cold_storage || "").trim().toLowerCase(),
+          capacity: String(r.monthly_capacity_meals || "").trim(),
+          slot: String(r.recurring_slot || "").trim(),
+          status: String(r.partnership_status || "").trim().toLowerCase(),
+          plottable: !isNaN(lat) && !isNaN(lng) && !(lat === 0 && lng === 0)
+        });
+      });
+      return out;
+    }
+
+    function buildEvents(rows) {
+      const out = [], seen = {};
+      (rows || []).forEach(r => {
+        const id = String(r.EventID || "").trim();
+        if (!id || seen[id]) return;
+        const lat = num(r.Latitude), lng = num(r.Longitude);
+        seen[id] = true;
+        out.push({
+          id,
+          city: String(r.City || "").trim(),
+          state: String(r.State || "").trim(),
+          venue: String(r.Venue || "").trim(),
+          address: String(r.Address || "").trim(),
+          status: String(r.Status || "").trim(),
+          paused: String(r.Paused || "").trim().toLowerCase() === "yes",
+          lat, lng,
+          plottable: !isNaN(lat) && !isNaN(lng) && !(lat === 0 && lng === 0)
+        });
+      });
+      return out;
+    }
+
+    function buildLinks(rows) {
+      const out = [];
+      (rows || []).forEach(r => {
+        const pid = String(r.PartnerID || "").trim();
+        const eid = String(r.EventID || "").trim();
+        if (!pid || !eid) return;
+        out.push({ partnerId: pid, eventId: eid, active: truthy(r.active) });
+      });
+      return out;
+    }
+
+    // =====================================================================
+    // Rendering
+    // =====================================================================
+    function clearMapObjects() {
+      partners.forEach(p => { if (p.marker) p.marker.setMap(null); });
+      events.forEach(e => { if (e.marker) e.marker.setMap(null); });
+      polylines.forEach(o => o.line.setMap(null));
+      polylines = [];
+    }
+
+    function render() {
+      clearMapObjects();
+      partnersById = {}; eventsById = {};
+      partners.forEach(p => { partnersById[p.id] = p; });
+      events.forEach(e => { eventsById[e.id] = e; });
+
+      // Lines first (so they sit under the markers).
+      links.forEach(lk => {
+        const p = partnersById[lk.partnerId], e = eventsById[lk.eventId];
+        if (!p || !e || !p.plottable || !e.plottable) return;
+        const line = new google.maps.Polyline({
+          path: [{ lat: e.lat, lng: e.lng }, { lat: p.lat, lng: p.lng }],
+          geodesic: true, map,
+          strokeColor: lk.active ? COLORS.navy : COLORS.gray,
+          strokeOpacity: lk.active ? 0.55 : 0.0,   // dashed lines use icons for the stroke
+          strokeWeight: lk.active ? 2 : 1.5,
+          icons: lk.active ? [] : [{
+            icon: { path: "M 0,-1 0,1", strokeOpacity: .7, strokeColor: COLORS.gray, scale: 2 },
+            offset: "0", repeat: "9px"
+          }],
+          zIndex: 1
+        });
+        polylines.push({ line, eventId: e.id, partnerId: p.id, active: lk.active });
+      });
+
+      // Event markers.
+      events.forEach(e => {
+        if (!e.plottable) return;
+        e.marker = new google.maps.Marker({
+          position: { lat: e.lat, lng: e.lng }, map,
+          title: (e.city ? e.city + (e.state ? ", " + e.state : "") : "Event"),
+          icon: eventIcon(e.paused, false), zIndex: 20
+        });
+        e.marker.addListener("click", () => selectEntity("event", e.id));
+      });
+
+      // Partner markers.
+      partners.forEach(p => {
+        if (!p.plottable) return;
+        p.marker = new google.maps.Marker({
+          position: { lat: p.lat, lng: p.lng }, map,
+          title: p.name, icon: partnerIcon(p.pathway, p.status, false), zIndex: 25
+        });
+        p.marker.addListener("click", () => selectEntity("partner", p.id));
+      });
+
+      updateBadge();
+    }
+
+    function updateBadge() {
+      const np = partners.filter(p => p.plottable).length;
+      const ne = events.filter(e => e.plottable).length;
+      const nl = polylines.length;
+      document.getElementById("badge").textContent =
+        np + " partner" + (np === 1 ? "" : "s") + " · " +
+        ne + " event" + (ne === 1 ? "" : "s") + " · " +
+        nl + " link" + (nl === 1 ? "" : "s");
+    }
+
+    // ---- Selection + highlighting ----
+    function resetHighlight() {
+      polylines.forEach(o => {
+        o.line.setOptions({
+          strokeOpacity: o.active ? 0.55 : 0.0,
+          strokeWeight: o.active ? 2 : 1.5,
+          strokeColor: o.active ? COLORS.navy : COLORS.gray,
+          zIndex: 1,
+          icons: o.active ? [] : [{
+            icon: { path: "M 0,-1 0,1", strokeOpacity: .7, strokeColor: COLORS.gray, scale: 2 },
+            offset: "0", repeat: "9px"
+          }]
+        });
+      });
+      partners.forEach(p => { if (p.marker) p.marker.setIcon(partnerIcon(p.pathway, p.status, false)); });
+      events.forEach(e => { if (e.marker) e.marker.setIcon(eventIcon(e.paused, false)); });
+    }
+
+    function selectEntity(kind, id) {
+      selected = { kind, id };
+      resetHighlight();
+
+      const connected = polylines.filter(o => kind === "event" ? o.eventId === id : o.partnerId === id);
+      // Dim everything, then light up the selected entity's links in orange.
+      polylines.forEach(o => o.line.setOptions({ strokeOpacity: o.active ? 0.12 : 0.0, icons: [] }));
+      connected.forEach(o => {
+        o.line.setOptions({
+          strokeColor: COLORS.orange, strokeOpacity: 0.95, strokeWeight: 3.5, zIndex: 5, icons: []
+        });
+        // Emphasize the marker at the OTHER end of each link.
+        if (kind === "event") {
+          const p = partnersById[o.partnerId];
+          if (p && p.marker) p.marker.setIcon(partnerIcon(p.pathway, p.status, true));
+        } else {
+          const e = eventsById[o.eventId];
+          if (e && e.marker) e.marker.setIcon(eventIcon(e.paused, true));
+        }
+      });
+
+      // Emphasize the clicked marker + open its info window.
+      let anchor;
+      if (kind === "event") {
+        const e = eventsById[id]; if (!e || !e.marker) return;
+        e.marker.setIcon(eventIcon(e.paused, true)); anchor = e.marker;
+        infoWindow.setContent(eventInfo(e));
+      } else {
+        const p = partnersById[id]; if (!p || !p.marker) return;
+        p.marker.setIcon(partnerIcon(p.pathway, p.status, true)); anchor = p.marker;
+        infoWindow.setContent(partnerInfo(p));
+      }
+      infoWindow.open(map, anchor);
+    }
+
+    function clearSelection() {
+      selected = null;
+      resetHighlight();
+      infoWindow.close();
+    }
+
+    // ---- Info window content ----
+    function pathwayPill(pw) {
+      if (pw === "hold-redistribute") return '<span class="pill hold">hold &amp; redistribute</span>';
+      if (pw === "same-day") return '<span class="pill same-day">same-day</span>';
+      return '<span class="pill" style="background:var(--gray)">' + esc(pw || "unknown") + '</span>';
+    }
+    function statusPill(st) {
+      const c = st === "active" ? "active" : st === "paused" ? "paused" : st === "candidate" ? "candidate" : "";
+      return '<span class="pill ' + c + '" ' + (c ? "" : 'style="background:var(--gray)"') + '>' + esc(st || "—") + '</span>';
+    }
+
+    function partnerInfo(p) {
+      const myLinks = links.filter(l => l.partnerId === p.id);
+      const evItems = myLinks.map(l => {
+        const e = eventsById[l.eventId];
+        const label = e ? (esc(e.city) + (e.state ? ", " + esc(e.state) : "") + (e.venue ? " — " + esc(e.venue) : "")) : ("Unknown event");
+        return '<li class="' + (l.active ? "" : "inactive") + '"><span class="lk-dot" style="background:' + COLORS.navy + '"></span>' + label + (l.active ? "" : " (inactive)") + "</li>";
+      });
+      const compliance = p.pathway === "hold-redistribute"
+        ? '<div class="iw-note ' + (p.coldStorage === "yes" ? "" : "warn") + '">Hold &amp; redistribute requires cold storage (food ≤41°F at donation, TFER §228.64). Cold storage: <b>' + esc(p.coldStorage || "unknown") + "</b>.</div>"
+        : (p.pathway === "same-day" ? '<div class="iw-note">Same-day service — covered by Time as a Public Health Control.</div>' : "");
+
+      return '<div class="iw">' +
+        '<div class="iw-hd"><div class="iw-kind pt">Distribution partner</div>' +
+        '<div class="iw-name">' + esc(p.name) + "</div>" +
+        (p.city || p.address ? '<div class="iw-sub">' + esc(p.address || p.city) + "</div>" : "") +
+        "</div><div class=\"iw-body\">" +
+        '<div class="iw-row"><span class="k">Pathway</span><span>' + pathwayPill(p.pathway) + "</span></div>" +
+        '<div class="iw-row"><span class="k">Cold storage</span><span>' + esc(p.coldStorage || "—") + "</span></div>" +
+        (p.capacity ? '<div class="iw-row"><span class="k">Capacity</span><span>' + esc(p.capacity) + " meals / month</span></div>" : "") +
+        (p.slot ? '<div class="iw-row"><span class="k">Recurring</span><span>' + esc(p.slot) + "</span></div>" : "") +
+        '<div class="iw-row"><span class="k">Status</span><span>' + statusPill(p.status) + "</span></div>" +
+        compliance +
+        '<div class="iw-links"><h3>Linked events (' + myLinks.length + ")</h3>" +
+        (evItems.length ? "<ul>" + evItems.join("") + "</ul>" : '<div class="none">No events linked yet.</div>') +
+        "</div></div></div>";
+    }
+
+    function eventInfo(e) {
+      const myLinks = links.filter(l => l.eventId === e.id);
+      const ptItems = myLinks.map(l => {
+        const p = partnersById[l.partnerId];
+        const col = p ? (p.pathway === "hold-redistribute" ? COLORS.teal : COLORS.orange) : COLORS.gray;
+        const label = p ? esc(p.name) : "Unknown partner";
+        return '<li class="' + (l.active ? "" : "inactive") + '"><span class="lk-dot" style="background:' + col + '"></span>' + label + (l.active ? "" : " (inactive)") + "</li>";
+      });
+      return '<div class="iw">' +
+        '<div class="iw-hd"><div class="iw-kind ev">Event</div>' +
+        '<div class="iw-name">Feed the City: ' + esc(e.city || "Event") + "</div>" +
+        (e.venue || e.address ? '<div class="iw-sub">' + esc(e.venue ? e.venue : "") + (e.venue && e.address ? " — " : "") + esc(e.address || "") + "</div>" : "") +
+        "</div><div class=\"iw-body\">" +
+        (e.state ? '<div class="iw-row"><span class="k">State</span><span>' + esc(e.state) + "</span></div>" : "") +
+        '<div class="iw-row"><span class="k">Status</span><span>' + esc(e.status || "—") + (e.paused ? " (paused)" : "") + "</span></div>" +
+        '<div class="iw-links"><h3>Receiving partners (' + myLinks.length + ")</h3>" +
+        (ptItems.length ? "<ul>" + ptItems.join("") + "</ul>" : '<div class="none">No partners linked yet.</div>') +
+        "</div></div></div>";
+    }
+
+    // =====================================================================
+    // Load / refresh
+    // =====================================================================
+    function showOverlay(html) {
+      document.getElementById("overlay-card").innerHTML = html;
+      document.getElementById("overlay").classList.add("show");
+    }
+    function hideOverlay() { document.getElementById("overlay").classList.remove("show"); }
+
+    function fitAll() {
+      const pts = [];
+      partners.forEach(p => { if (p.plottable) pts.push({ lat: p.lat, lng: p.lng }); });
+      events.forEach(e => { if (e.plottable) pts.push({ lat: e.lat, lng: e.lng }); });
+      if (!pts.length) return;
+      if (pts.length === 1) { map.setCenter(pts[0]); map.setZoom(11); return; }
+      const b = new google.maps.LatLngBounds();
+      pts.forEach(pt => b.extend(pt));
+      map.fitBounds(b, 60);
+    }
+
+    function loadData(initial) {
+      if (isPlaceholder(CONFIG.PARTNERS_CSV) || isPlaceholder(CONFIG.LINKS_CSV)) {
+        showOverlay('<h2>Almost there — CSV URLs needed</h2>' +
+          '<p>Run <b>FTC ▸ Rebuild public view</b> in the Partners workbook, publish ' +
+          '<code>Partners_Public</code> and <code>Links_Public</code> to web as CSV, ' +
+          'and paste their URLs into <code>CONFIG</code> in <code>src/index.html</code>.</p>');
+        document.getElementById("badge").textContent = "Setup needed";
+        return;
+      }
+      if (initial) {
+        document.getElementById("badge").textContent = "Loading…";
+      }
+      Promise.all([
+        fetchCsv(CONFIG.PARTNERS_CSV),
+        fetchCsv(CONFIG.LINKS_CSV),
+        fetchCsv(CONFIG.EVENTS_CSV)
+      ]).then(([pRows, lRows, eRows]) => {
+        partners = buildPartners(pRows);
+        links = buildLinks(lRows);
+        events = buildEvents(eRows);
+        hideOverlay();
+        render();
+        if (initial) fitAll();
+        // Re-apply the open selection (if any) so a refresh doesn't drop it.
+        if (selected && (selected.kind === "event" ? eventsById[selected.id] : partnersById[selected.id])) {
+          selectEntity(selected.kind, selected.id);
+        }
+      }).catch(err => {
+        console.error(err);
+        if (initial) {
+          showOverlay('<h2>Could not load the data</h2>' +
+            '<p>The published CSVs did not load (' + esc(err && err.message ? err.message : "network or publish error") +
+            '). Check that each tab is still <b>published to web</b> and the URLs in <code>CONFIG</code> are correct.</p>' +
+            '<button id="retry-btn" type="button">Try again</button>');
+          const b = document.getElementById("retry-btn");
+          if (b) b.addEventListener("click", () => loadData(true));
+          document.getElementById("badge").textContent = "Load error";
+        } else {
+          document.getElementById("badge").textContent += " · refresh failed";
+        }
+      });
+    }
+
+    function startAutoRefresh() {
+      if (refreshTimer) clearInterval(refreshTimer);
+      refreshTimer = setInterval(() => loadData(false), CONFIG.REFRESH_MS);
+    }
+
+    // =====================================================================
+    // Maps init (called by the Maps JS API once it loads)
+    // =====================================================================
+    function initMap() {
+      clearTimeout(window._mapsTimeout);
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 33, lng: -97 }, zoom: 5,
+        mapTypeId: "roadmap",
+        disableDefaultUI: true, gestureHandling: "greedy",
+        zoomControl: true, zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM },
+        clickableIcons: false,
+        styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }]
+      });
+      infoWindow = new google.maps.InfoWindow({ maxWidth: 300 });
+      infoWindow.addListener("closeclick", clearSelection);
+      map.addListener("click", clearSelection);
+
+      document.getElementById("refresh-btn").addEventListener("click", () => loadData(false));
+      document.getElementById("legend-toggle").addEventListener("click", () => {
+        const lg = document.getElementById("legend");
+        const min = lg.classList.toggle("min");
+        document.getElementById("legend-toggle").textContent = min ? "+" : "–";
+      });
+
+      loadData(true);
+      startAutoRefresh();
+    }
+    window.initMap = initMap;
+
+    // If the Maps API key is missing/invalid, show a clear setup message.
+    window.gm_authFailure = function () {
+      showOverlay('<h2>Google Maps key needed</h2>' +
+        '<p>This map needs a Maps JavaScript API key. Paste the event map\'s key into ' +
+        '<code>FALLBACK_KEY</code> in <code>src/index.html</code> (or pass it via <code>?k=</code>), ' +
+        'and add this site\'s <code>*.pages.dev</code> URL to that key\'s allowed referrers in ' +
+        'Google Cloud Console.</p>');
+      document.getElementById("badge").textContent = "Map error";
+    };
+  </script>
+
+  <script>
+    // If Maps doesn't load within 8s (blocked, bad key, no network), say so.
+    window._mapsTimeout = setTimeout(function () {
+      if (!window.google || !window.google.maps) {
+        var card = document.getElementById("overlay-card");
+        card.innerHTML = '<h2>Map didn\'t load</h2><p>The Google Maps service didn\'t finish loading ' +
+          '(usually an API key, billing, or network issue). Reload the page to try again.</p>';
+        document.getElementById("overlay").classList.add("show");
+        var b = document.getElementById("badge"); if (b) b.textContent = "Map error";
+      }
+    }, 8000);
+  </script>
+
+  <script>
+    // Google Maps API key bootstrap — SAME pattern as the event map.
+    //  - PRODUCTION / quick test: pass the key in the URL as ?k=YOUR_KEY (overrides FALLBACK_KEY).
+    //  - FALLBACK_KEY: paste the event map's EXISTING Maps JS key here. (Left blank on
+    //    purpose — no new key is generated or hardcoded. Reuse the referrer-restricted
+    //    event-map key and add this project's Cloudflare URL to its allowed referrers:
+    //    https://<this-pages-project>.pages.dev/*  plus localhost/127.0.0.1 for local testing.)
+    // Needs Maps JavaScript API enabled on the key. (No Geocoding needed here — all
+    // coordinates are pre-cached in the sheet.)
+    (function () {
+      var FALLBACK_KEY = "";   // <-- paste the event map's Maps JS key (do not commit a new one)
+      var key = new URLSearchParams(window.location.search).get("k") || FALLBACK_KEY;
+      if (!key) {
+        // No key at all: show the same setup message instead of a silent blank map.
+        window.gm_authFailure && setTimeout(window.gm_authFailure, 0);
+        return;
+      }
+      var s = document.createElement("script");
+      s.async = true;
+      s.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(key) +
+        "&libraries=geometry&loading=async&v=weekly&callback=initMap";
+      document.head.appendChild(s);
+    })();
+  </script>
+</body>
+
+</html>

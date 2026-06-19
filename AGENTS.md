@@ -16,10 +16,19 @@ The two link by `EventID` (the event map already uses stable UUIDs — see
 `reference/events-sample.csv`).
 
 ## Hard rules (non-negotiable)
-1. **Privacy wall.** Partner data (contacts, capacity, who-receives-what) is
-   internal. It is NEVER written to a published CSV and NEVER served on a public
-   URL. Only the public event map uses a published CSV, and only for its own
-   Events tab.
+1. **Privacy wall (scoped — see Phase 3b carve-out).** Contact fields
+   (`contact_name` / `contact_phone` / `contact_email`), `agreement_on_file`,
+   `agreement_date`, and `last_verified` are internal and are NEVER written to a
+   published CSV or served on a public URL.
+   **Phase 3b carve-out (decided 2026-06-19):** Dev explicitly chose to publish a
+   NON-CONTACT subset of partner data to drive a public distribution map — org
+   name, city, address, lat/long, `pathway`, `cold_storage`,
+   `monthly_capacity_meals`, `recurring_slot`, `partnership_status`, plus the
+   event↔partner links (`PartnerID`/`EventID`/`active`). These come from the
+   auto-generated `Partners_Public` / `Links_Public` tabs ONLY (built by
+   `Rebuild public view`). Never widen that column set to include a contact /
+   agreement / verification field. The public event map still uses its own
+   published Events CSV for its Events tab.
 2. **Separate workbook.** Partners + Links live in their OWN Google Sheets
    workbook, not in the public Events sheet. The public event map's workbook
    must never contain partner data.
@@ -33,9 +42,16 @@ The two link by `EventID` (the event map already uses stable UUIDs — see
 - **Database:** Google Sheets (separate workbook).
 - **Admin app:** Google Apps Script via `clasp`, running inside the sheet.
   Reuse the event map's geocoding + status logic.
-- **Private map:** an Apps Script **web app**, gated by Google sign-in. Reads
-  Partners + Links server-side. (NOT a public Cloudflare Pages site. If
-  Cloudflare is used, it must sit behind Cloudflare Access.)
+- **Private admin map (PRD §4):** an Apps Script web app, gated by Google
+  sign-in, reads Partners + Links server-side. Still the model for the full
+  internal view (contacts included).
+- **Public distribution map (Phase 3b, decided 2026-06-19):** a self-contained
+  `src/index.html` on its OWN Cloudflare Pages project (separate from the event
+  map), reading the published `Partners_Public` / `Links_Public` /
+  `Events_Reference` CSVs by URL — no auth, no Sheets API. Only the non-contact
+  subset (rule #1 carve-out) is ever published. Reuses the event map's
+  referrer-restricted Maps JS key (add this project's `*.pages.dev` URL to its
+  referrers; pass via `?k=` or `FALLBACK_KEY`).
 - Do NOT introduce Supabase, Airtable, or Salesforce. This is the Tier A build.
 
 ## Data model (detail in `docs/DATA_MODEL.md`)

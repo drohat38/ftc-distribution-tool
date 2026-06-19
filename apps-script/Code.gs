@@ -78,6 +78,33 @@ const CONFIG = {
     ]
   },
 
+  // Phase 3b — the PUBLIC view. "Rebuild public view" regenerates these two tabs
+  // from the private Partners + EventPartnerLinks tabs; the human then publishes
+  // each to web as CSV (File ▸ Share ▸ Publish to web ▸ that tab ▸ CSV) so the
+  // public Cloudflare map can read them by URL.
+  //
+  // SCOPED OVERRIDE OF THE PRIVACY WALL (decided 2026-06-19; see CHANGELOG /
+  // AGENTS.md rule #1). Only the NON-CONTACT subset below is ever published.
+  // The contact fields (contact_name / contact_phone / contact_email),
+  // agreement_on_file, agreement_date, and last_verified are DELIBERATELY
+  // EXCLUDED — they stay only in the private Partners tab and are never published.
+  // Links_Public carries only PartnerID/EventID/active — last_capacity_confirmed
+  // and per-link recurring_slot stay internal (defense in depth).
+  PUBLIC: {
+    PARTNERS: {
+      name: 'Partners_Public',
+      headers: [
+        'PartnerID', 'organization_name', 'city', 'address',
+        'latitude', 'longitude', 'pathway', 'cold_storage',
+        'monthly_capacity_meals', 'recurring_slot', 'partnership_status'
+      ]
+    },
+    LINKS: {
+      name: 'Links_Public',
+      headers: ['PartnerID', 'EventID', 'active']
+    }
+  },
+
   // Tab specs. `headers` order MUST match docs/DATA_MODEL.md exactly.
   SHEETS: {
     PARTNERS: {
@@ -128,6 +155,8 @@ function onOpen() {
     .addItem('Refresh Events', 'refreshEvents')
     .addItem('Link Partner to Event(s)', 'openLinkPartnerDialog')
     .addItem('View Links', 'openViewLinksDialog')
+    .addSeparator()
+    .addItem('Rebuild public view', 'rebuildPublicView')
     .addSeparator()
     .addItem('Set up sheets', 'setupSheets')
     .addToUi();
@@ -631,6 +660,125 @@ function getLinksForEvent(eventId) {
     });
   items.sort(linkLabelSort_);
   return { eventId: id, eventLabel: ev ? eventLabel_(ev) : '', items: items };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3b — Rebuild public view (the published, no-contact subset)
+// ---------------------------------------------------------------------------
+
+/**
+ * Regenerate the two PUBLIC tabs the Cloudflare map reads:
+ *
+ *   Partners_Public — one row per partner, NON-CONTACT subset only
+ *     (PartnerID, organization_name, city, address, latitude, longitude,
+ *      pathway, cold_storage, monthly_capacity_meals, recurring_slot,
+ *      partnership_status). Contact name/phone/email, agreement_on_file,
+ *      agreement_date and last_verified are NEVER copied here.
+ *   Links_Public — one row per event↔partner link: PartnerID, EventID, active
+ *     (active normalized to a real TRUE/FALSE). last_capacity_confirmed and the
+ *     per-link recurring_slot stay internal.
+ *
+ * This is the Phase-3b scoped override of the privacy wall (decided 2026-06-19):
+ * the non-contact subset is intentionally public; everything sensitive stays in
+ * the private tabs. Both tabs are fully rebuilt each run (header + data rewritten,
+ * deduped), brand-styled navy (to read as "this one is published"), and carry a
+ * warning-only protection + header note so they aren't hand-edited.
+ *
+ * After running, publish each tab to web as CSV (File ▸ Share ▸ Publish to web ▸
+ * pick the tab ▸ CSV). Those CSV URLs go into src/index.html's CONFIG.
+ */
+function rebuildPublicView() {
+  const ui = SpreadsheetApp.getUi();
+  let result;
+  try {
+    result = withLock_(function() {
+      // Partners → public subset. Keep only rows that are real partners (id +
+      // name), mapped down to the public columns. Coordinates may be blank; the
+      // map simply won't plot those (same as a missing geocode).
+      const pSpec = CONFIG.PUBLIC.PARTNERS;
+      const partners = readAllPartners_();
+      const pRows = partners.map(function(p) {
+        return pSpec.headers.map(function(h) {
+          const v = p[h];
+          return (v === undefined || v === null) ? '' : v;
+        });
+      });
+
+      // Links → PartnerID/EventID/active. Only emit links whose partner is in the
+      // public set AND whose event still exists in the mirror, so the published
+      // graph never points at a partner we didn't publish or a stale event.
+      const lSpec = CONFIG.PUBLIC.LINKS;
+      const publicPartnerIds = {};
+      partners.forEach(function(p) { publicPartnerIds[p.PartnerID] = true; });
+      const knownEventIds = {};
+      readEventsReference_().forEach(function(e) { knownEventIds[e.EventID] = true; });
+
+      let droppedLinks = 0;
+      const lRows = [];
+      readAllLinks_().forEach(function(l) {
+        const pid = String(l.PartnerID || '').trim();
+        const eid = String(l.EventID || '').trim();
+        if (!pid || !eid) return;
+        if (!publicPartnerIds[pid] || !knownEventIds[eid]) { droppedLinks++; return; }
+        lRows.push([pid, eid, isTruthyFlag_(l.active)]);
+      });
+
+      writePublicSheet_(pSpec, pRows);
+      writePublicSheet_(lSpec, lRows);
+
+      return { partners: pRows.length, links: lRows.length, droppedLinks: droppedLinks };
+    });
+  } catch (err) {
+    ui.alert('Rebuild public view failed', String(err && err.message ? err.message : err), ui.ButtonSet.OK);
+    return;
+  }
+
+  ui.alert(
+    'Public view rebuilt',
+    'Partners_Public: ' + result.partners + ' partner(s) (non-contact subset).\n' +
+    'Links_Public: ' + result.links + ' link(s)' +
+    (result.droppedLinks ? ' (' + result.droppedLinks + ' link(s) skipped — partner or event not in the public set).' : '.') +
+    '\n\nNeither tab contains contact info, agreement status, or last_verified.\n\n' +
+    'Next: File ▸ Share ▸ Publish to web, and publish BOTH "Partners_Public" and ' +
+    '"Links_Public" as CSV (also publish "Events_Reference" if you haven\'t). ' +
+    'Paste those CSV URLs into src/index.html.',
+    ui.ButtonSet.OK
+  );
+}
+
+/**
+ * Replace a public tab's contents: lay down the header (navy, distinct from the
+ * orange internal tabs), rewrite all data rows, and (re)apply a warning-only
+ * protection + note. Idempotent and self-contained.
+ */
+function writePublicSheet_(spec, rows) {
+  const sheet = getOrCreateSheet_(spec.name);
+  const n = spec.headers.length;
+
+  // Header row + styling (navy = "published" so it's visually distinct).
+  sheet.getRange(1, 1, 1, n).setValues([spec.headers]);
+  sheet.getRange(1, 1, 1, n)
+    .setBackground(CONFIG.COLORS.NAVY)
+    .setFontColor('#FFFFFF')
+    .setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidths(1, n, 150);
+  sheet.getRange(1, 1).setNote(
+    'AUTO-GENERATED PUBLIC VIEW. Managed by FTC ▸ Rebuild public view; published ' +
+    'to web as CSV for the public map. Do NOT hand-edit — overwritten on rebuild. ' +
+    'Contains NO contact info, agreement status, or last_verified.'
+  );
+
+  // Clear old data rows, then write the new ones.
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, Math.max(sheet.getLastColumn(), n)).clearContent();
+  if (rows.length) sheet.getRange(2, 1, rows.length, n).setValues(rows);
+
+  if (!sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) {
+    sheet.protect()
+      .setWarningOnly(true)
+      .setDescription('Auto-generated public view — managed by FTC ▸ Rebuild public view.');
+  }
 }
 
 // ---------------------------------------------------------------------------

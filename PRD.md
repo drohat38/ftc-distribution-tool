@@ -70,6 +70,17 @@ food never has nowhere to go.
 to a published CSV or served on a public URL. The public event map keeps reading
 only its own Events tab CSV and is unaffected by this project.
 
+> **Phase 3b amendment (decided 2026-06-19).** Dev explicitly chose to also ship
+> a **public** distribution map (single-file `src/index.html` on its own
+> Cloudflare Pages project, reading published CSVs — no auth). This is a scoped,
+> deliberate relaxation of the privacy wall: it publishes only a **non-contact
+> subset** of partner fields (org name, city, address, lat/long, `pathway`,
+> `cold_storage`, `monthly_capacity_meals`, `recurring_slot`,
+> `partnership_status`) plus the event↔partner links — via the auto-generated
+> `Partners_Public` / `Links_Public` tabs. Contact fields, `agreement_on_file`,
+> `agreement_date`, and `last_verified` are still NEVER published. The gated
+> Apps Script web app below remains the model for the full internal view.
+
 **Where partner data comes from:** Nick's ~50 already-agreed orgs are the first
 records. Additional candidates can be seeded from Google Places (food pantries,
 shelters) and, where available, a local 211 / Open Referral (HSDS) feed. External
