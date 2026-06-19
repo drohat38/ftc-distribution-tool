@@ -138,9 +138,52 @@ const CONFIG = {
       // `active` is a checkbox, switched on with the link dialog in Phase 3a
       // (DATA_MODEL.md Tab 2). The Link dialog upsert writes a real boolean here.
       checkboxes: ['active']
+    },
+
+    // Phase 4 — pre-event capacity check log. One row per (event, date, partner)
+    // ask. Created with Status='sent' by runCapacityCheck() and updated to
+    // confirmed/declined by the Google Form submit trigger (onCapacityFormSubmit).
+    // EventDate / RequestedMeals / ConfirmedMeals carry the volume reconciliation;
+    // the expected event total is reconstructed as sum(RequestedMeals) per group
+    // (runCapacityCheck splits the entered total across partners with no remainder
+    // lost — see splitMeals_). Contact info lives only in Partners; this tab never
+    // stores it, and is internal-only (never part of the published public view).
+    CAPACITY: {
+      name: 'CapacityChecks',
+      idColumn: 'CheckID',
+      headers: [
+        'CheckID', 'EventID', 'PartnerID', 'EventDate', 'RequestedMeals',
+        'ConfirmedMeals', 'Status', 'SentTimestamp', 'ResponseTimestamp'
+      ],
+      required: ['CheckID', 'EventID', 'PartnerID'],
+      dropdowns: {
+        Status: ['sent', 'confirmed', 'declined', 'no-response']
+      },
+      checkboxes: []
     }
   }
 };
+
+// Phase 4 — ScriptProperties keys for the reusable capacity-check Google Form.
+// The form is created once (lazily) and reused for every check; responses route
+// back to CapacityChecks by CheckID via an installable onFormSubmit trigger.
+const CAPACITY_PROPS = {
+  FORM_ID: 'CAPACITY_FORM_ID',
+  PUBLISHED_URL: 'CAPACITY_FORM_PUBLISHED_URL',
+  ITEM_CHECKID: 'CAPACITY_ITEM_CHECKID',  // short-text item we prefill per partner
+  ITEM_YESNO: 'CAPACITY_ITEM_YESNO',      // Yes/No multiple choice
+  ITEM_MEALS: 'CAPACITY_ITEM_MEALS'       // ConfirmedMeals short text (number)
+};
+// Stable titles for the form items (used as a fallback match if a stored item id
+// is ever missing). Keep in sync with ensureCapacityForm_.
+const CAPACITY_FORM_TITLES = {
+  CHECKID: 'Reference code (please do not edit)',
+  YESNO: 'Can your organization take this food?',
+  MEALS: 'Roughly how many meals can you take?'
+};
+const CAPACITY_TRIGGER_FN = 'onCapacityFormSubmit';
+// How many nearest backups to suggest when an event is short on confirmed meals.
+const CAPACITY_BACKUP_LIMIT = 5;
 
 /**
  * Build the "FTC" menu. Add / Edit Partner open the qualify-and-geocode dialogs;
@@ -155,6 +198,9 @@ function onOpen() {
     .addItem('Refresh Events', 'refreshEvents')
     .addItem('Link Partner to Event(s)', 'openLinkPartnerDialog')
     .addItem('View Links', 'openViewLinksDialog')
+    .addSeparator()
+    .addItem('Run Capacity Check', 'openRunCapacityCheckDialog')
+    .addItem('View Capacity Status', 'openViewCapacityStatusDialog')
     .addSeparator()
     .addItem('Rebuild public view', 'rebuildPublicView')
     .addSeparator()
@@ -177,10 +223,10 @@ function setupSheets() {
 
   SpreadsheetApp.getUi().alert(
     'Sheets ready',
-    'The "Partners" and "EventPartnerLinks" tabs are set up with headers, ' +
-    'dropdowns, and auto-UUID.\n\n' +
-    'Add a row on either tab and its ID fills in automatically. pathway, ' +
-    'cold_storage, and partnership_status are dropdowns.',
+    'The "Partners", "EventPartnerLinks", and "CapacityChecks" tabs are set up ' +
+    'with headers, dropdowns, and auto-UUID.\n\n' +
+    'Add a row on any tab and its ID fills in automatically. pathway, ' +
+    'cold_storage, partnership_status, and Status are dropdowns.',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
 }
@@ -779,6 +825,726 @@ function writePublicSheet_(spec, rows) {
       .setWarningOnly(true)
       .setDescription('Auto-generated public view — managed by FTC ▸ Rebuild public view.');
   }
+}
+
+// ===========================================================================
+// Phase 4 — Pre-event capacity check
+// ===========================================================================
+//
+// The week before an event, confirm that each ACTIVE linked partner can absorb
+// the expected volume, log structured responses, and flag a shortfall with
+// nearest backups. Uses the INTERNAL contact fields (Partners.contact_email) to
+// reach partners — these never touch the public view (privacy wall; the public
+// Partners_Public/Links_Public tabs carry no contact or capacity-check data).
+//
+// Flow:
+//   1. "Run Capacity Check" — pick an event, its upcoming date, and the expected
+//      total meals. runCapacityCheck() splits that total across the active linked
+//      partners that have a contact email, upserts one CapacityChecks row per
+//      partner (Status='sent'), and emails each contact (MailApp) a unique
+//      Google-Form link prefilled with that row's CheckID.
+//   2. Responses come back via that ONE reusable Google Form (NOT reply-scanning).
+//      onCapacityFormSubmit() (an installable trigger) reads the CheckID + Yes/No
+//      + meals and writes Status / ConfirmedMeals / ResponseTimestamp back onto
+//      the matching CapacityChecks row (and stamps the link's
+//      last_capacity_confirmed).
+//   3. "View Capacity Status" — per event+date: each partner's ask vs. confirmed,
+//      the totals, and — if confirmed < expected — the nearest ACTIVE partners
+//      NOT yet linked to that event (by lat/long), with their capacity, as
+//      suggested backups so produced food never has nowhere to go.
+
+/** Open the Run Capacity Check dialog. */
+function openRunCapacityCheckDialog() {
+  const html = HtmlService.createHtmlOutputFromFile('RunCapacityCheckDialog')
+    .setWidth(580).setHeight(780);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Run Pre-Event Capacity Check');
+}
+
+/** Open the View Capacity Status dialog. */
+function openViewCapacityStatusDialog() {
+  const html = HtmlService.createHtmlOutputFromFile('ViewCapacityStatusDialog')
+    .setWidth(600).setHeight(740);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Capacity Check Status');
+}
+
+/**
+ * Data the Run Capacity Check dialog needs to render its event picker. Events
+ * come from the read-only Events_Reference mirror (run Refresh Events first).
+ */
+function getRunCapacityCheckData() {
+  const events = readEventsReference_().map(function(e) {
+    return { id: e.EventID, label: eventLabel_(e),
+             status: String(e.Status || '').trim(),
+             paused: String(e.Paused || '').trim().toLowerCase() === 'yes' };
+  });
+  return { events: events, hasEvents: events.length > 0 };
+}
+
+/**
+ * The ACTIVE partners linked to an event, for the dialog's "who will be emailed"
+ * preview. Flags partners with no contact email (they can't be emailed and will
+ * be skipped) and any link pointing at a missing partner record.
+ */
+function getActivePartnersForEvent(eventId) {
+  const id = String(eventId || '').trim();
+  if (!id) return { items: [], emailable: 0 };
+
+  const partnersById = {};
+  readAllPartners_().forEach(function(p) { partnersById[p.PartnerID] = p; });
+
+  const items = readAllLinks_()
+    .filter(function(l) { return l.EventID === id && isTruthyFlag_(l.active); })
+    .map(function(l) {
+      const p = partnersById[l.PartnerID];
+      return {
+        partnerId: l.PartnerID,
+        name: p ? p.organization_name : ('Unknown partner (' + l.PartnerID + ')'),
+        location: p ? partnerLocation_(p) : '',
+        hasEmail: p ? !!String(p.contact_email || '').trim() : false,
+        capacity: p ? (Number(p.monthly_capacity_meals) || 0) : 0,
+        pathway: p ? String(p.pathway || '').trim() : '',
+        stale: !p
+      };
+    });
+  items.sort(function(a, b) {
+    return String(a.name).toLowerCase() < String(b.name).toLowerCase() ? -1 : 1;
+  });
+  const emailable = items.filter(function(i) { return i.hasEmail && !i.stale; }).length;
+  return { items: items, emailable: emailable };
+}
+
+/**
+ * Run the pre-event capacity check for one event + date.
+ *
+ * payload = { eventId, eventDate:'YYYY-MM-DD', expectedMeals }
+ *
+ * For each ACTIVE linked partner that has a contact email: upsert a
+ * CapacityChecks row keyed by (EventID, PartnerID, EventDate) — keeping the
+ * CheckID on a re-run so a resend never duplicates a row — with Status='sent',
+ * RequestedMeals = its share of the expected total (split with no remainder
+ * lost), and a fresh SentTimestamp. Then email each contact a Google-Form link
+ * prefilled with that CheckID. Partners with no email are skipped and reported.
+ *
+ * The form + its submit trigger are created lazily on the first run
+ * (ensureCapacityForm_). Emails go out AFTER the sheet lock is released so the
+ * document isn't held while MailApp runs.
+ */
+function runCapacityCheck(payload) {
+  const data = payload || {};
+  const eventId = String(data.eventId || '').trim();
+  const eventDate = String(data.eventDate || '').trim();
+  const expectedMeals = Math.round(Number(data.expectedMeals));
+
+  if (!eventId) throw new Error('Pick an event first.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) throw new Error('Pick the event date.');
+  if (!isFinite(expectedMeals) || expectedMeals <= 0) {
+    throw new Error('Enter the expected total meals (a whole number greater than 0).');
+  }
+
+  const ev = readEventsReference_().filter(function(e) { return e.EventID === eventId; })[0];
+  if (!ev) throw new Error('That event is not in the current Events_Reference. Run Refresh Events and try again.');
+  const eventLabel = eventLabel_(ev);
+
+  // Resolve the active linked partners we can actually reach (have an email).
+  const partnersById = {};
+  readAllPartners_().forEach(function(p) { partnersById[p.PartnerID] = p; });
+  const activeLinks = readAllLinks_().filter(function(l) {
+    return l.EventID === eventId && isTruthyFlag_(l.active);
+  });
+
+  const emailable = [];
+  const skipped = [];
+  activeLinks.forEach(function(l) {
+    const p = partnersById[l.PartnerID];
+    if (!p) {
+      skipped.push({ partnerId: l.PartnerID, name: 'Unknown partner (' + l.PartnerID + ')', reason: 'partner record missing' });
+      return;
+    }
+    const email = String(p.contact_email || '').trim();
+    if (!email) {
+      skipped.push({ partnerId: p.PartnerID, name: p.organization_name, reason: 'no contact email on file' });
+      return;
+    }
+    emailable.push({ partner: p, email: email });
+  });
+
+  if (!emailable.length) {
+    throw new Error('No ACTIVE partner linked to this event has a contact email. ' +
+      'Add an email via FTC ▸ Edit Partner, or link an active partner first (FTC ▸ Link Partner to Event(s)).');
+  }
+
+  // Create / reuse the response form + trigger BEFORE taking the lock.
+  const form = ensureCapacityForm_();
+
+  // Split the expected total across reachable partners (sum of shares == total).
+  const shares = splitMeals_(expectedMeals, emailable.length);
+
+  // Upsert the CapacityChecks rows under the document lock.
+  const recipients = withLock_(function() {
+    const spec = CONFIG.SHEETS.CAPACITY;
+    const sheet = getOrCreateSheet_(spec.name);
+    ensureCapacityHeaders_(sheet);
+    const map = headerMap_(sheet);
+
+    const index = {};
+    readAllCapacityChecks_(sheet, map).forEach(function(r) {
+      index[r.EventID + '|' + r.PartnerID + '|' + ymd_(r.EventDate)] = r;
+    });
+
+    let nextRow = sheet.getLastRow() + 1;
+    const out = [];
+    emailable.forEach(function(rec, i) {
+      const p = rec.partner;
+      const prior = index[eventId + '|' + p.PartnerID + '|' + eventDate];
+      const checkId = (prior && String(prior.CheckID || '').trim()) || Utilities.getUuid();
+      const obj = {
+        CheckID: checkId,
+        EventID: eventId,
+        PartnerID: p.PartnerID,
+        EventDate: eventDate,
+        RequestedMeals: shares[i],
+        ConfirmedMeals: '',          // reset — this is a fresh ask
+        Status: 'sent',
+        SentTimestamp: new Date(),
+        ResponseTimestamp: ''        // reset — awaiting a new response
+      };
+      const writeRow = prior ? prior._row : nextRow;
+      writeCapacityRow_(sheet, writeRow, obj, map);
+      if (!prior) nextRow++;
+      out.push({
+        checkId: checkId, email: rec.email,
+        contactName: String(p.contact_name || '').trim(),
+        orgName: p.organization_name, requested: shares[i]
+      });
+    });
+    return out;
+  });
+
+  // Send emails outside the lock — each carries a prefilled link keyed by CheckID.
+  const sent = [];
+  const failed = [];
+  recipients.forEach(function(r) {
+    try {
+      const url = capacityPrefilledUrl_(form, r.checkId);
+      sendCapacityEmail_(r.email, r.contactName, r.orgName, eventLabel, eventDate, r.requested, url);
+      sent.push({ name: r.orgName, email: r.email, requested: r.requested });
+    } catch (err) {
+      failed.push({ name: r.orgName, email: r.email, error: String(err && err.message ? err.message : err) });
+    }
+  });
+
+  return {
+    eventLabel: eventLabel,
+    eventDate: eventDate,
+    expectedMeals: expectedMeals,
+    sent: sent,
+    failed: failed,
+    skipped: skipped,
+    formUrl: PropertiesService.getDocumentProperties().getProperty(CAPACITY_PROPS.PUBLISHED_URL) || form.getPublishedUrl()
+  };
+}
+
+/**
+ * Summary of every capacity check, grouped by (event, date), for the View
+ * Capacity Status picker. Expected total per group = sum(RequestedMeals);
+ * confirmed total = sum(ConfirmedMeals) over confirmed rows. Newest date first.
+ */
+function getCapacityStatusData() {
+  const eventsById = {};
+  readEventsReference_().forEach(function(e) { eventsById[e.EventID] = e; });
+
+  const groups = {};
+  readAllCapacityChecks_().forEach(function(r) {
+    const eid = String(r.EventID || '').trim();
+    if (!eid) return;
+    const d = ymd_(r.EventDate);
+    const key = eid + '||' + d;
+    if (!groups[key]) {
+      const ev = eventsById[eid];
+      groups[key] = {
+        eventId: eid, eventDate: d,
+        label: (ev ? eventLabel_(ev) : ('Event ' + eid)) + (d ? (' · ' + d) : ''),
+        total: 0, confirmed: 0, declined: 0, pending: 0,
+        expected: 0, confirmedMeals: 0
+      };
+    }
+    const g = groups[key];
+    const st = String(r.Status || '').trim().toLowerCase();
+    g.total++;
+    g.expected += Number(r.RequestedMeals) || 0;
+    if (st === 'confirmed') { g.confirmed++; g.confirmedMeals += Number(r.ConfirmedMeals) || 0; }
+    else if (st === 'declined') { g.declined++; }
+    else { g.pending++; }
+  });
+
+  const list = Object.keys(groups).map(function(k) { return groups[k]; });
+  list.sort(function(a, b) {
+    if (a.eventDate !== b.eventDate) return a.eventDate < b.eventDate ? 1 : -1; // newest first
+    return String(a.label).toLowerCase() < String(b.label).toLowerCase() ? -1 : 1;
+  });
+  list.forEach(function(g) { g.shortfall = Math.max(0, g.expected - g.confirmedMeals); });
+  return { groups: list };
+}
+
+/**
+ * Full status for one event+date: each partner's ask vs. confirmed meals, the
+ * totals, and — when confirmed < expected — a ranked backup list of the nearest
+ * ACTIVE partners NOT yet linked to that event (PRD §7.3). Dates are formatted
+ * to strings here (google.script.run can't serialize Date objects).
+ */
+function getCapacityStatus(eventId, eventDate) {
+  const eid = String(eventId || '').trim();
+  const d = ymd_(eventDate);
+  if (!eid) return { items: [], counts: { total: 0, confirmed: 0, declined: 0, pending: 0 } };
+
+  const partnersById = {};
+  readAllPartners_().forEach(function(p) { partnersById[p.PartnerID] = p; });
+  const ev = readEventsReference_().filter(function(e) { return e.EventID === eid; })[0];
+
+  const rows = readAllCapacityChecks_().filter(function(r) {
+    return String(r.EventID || '').trim() === eid && ymd_(r.EventDate) === d;
+  });
+
+  let expected = 0, confirmedMeals = 0, confirmed = 0, declined = 0, pending = 0;
+  const items = rows.map(function(r) {
+    const p = partnersById[r.PartnerID];
+    const st = String(r.Status || '').trim().toLowerCase() || 'sent';
+    const req = Number(r.RequestedMeals) || 0;
+    const conf = Number(r.ConfirmedMeals) || 0;
+    expected += req;
+    if (st === 'confirmed') { confirmed++; confirmedMeals += conf; }
+    else if (st === 'declined') { declined++; }
+    else { pending++; }
+    return {
+      checkId: r.CheckID, partnerId: r.PartnerID,
+      name: p ? p.organization_name : ('Unknown partner (' + r.PartnerID + ')'),
+      location: p ? partnerLocation_(p) : '',
+      requested: req, confirmed: conf, status: st,
+      sent: formatTs_(r.SentTimestamp), responded: formatTs_(r.ResponseTimestamp),
+      stale: !p
+    };
+  });
+  items.sort(function(a, b) {
+    return String(a.name).toLowerCase() < String(b.name).toLowerCase() ? -1 : 1;
+  });
+
+  const shortfall = Math.max(0, expected - confirmedMeals);
+  let backups = null;
+  if (shortfall > 0) {
+    const linked = {};
+    readAllLinks_().forEach(function(l) { if (l.EventID === eid) linked[l.PartnerID] = true; });
+    backups = suggestBackups_(eid, linked);
+  }
+
+  return {
+    eventId: eid, eventDate: d,
+    eventLabel: ev ? eventLabel_(ev) : ('Event ' + eid),
+    items: items,
+    expected: expected, confirmedMeals: confirmedMeals, shortfall: shortfall,
+    counts: { total: rows.length, confirmed: confirmed, declined: declined, pending: pending },
+    backups: backups
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — the reusable response Google Form + submit trigger
+// ---------------------------------------------------------------------------
+
+/**
+ * Get (or lazily create) the ONE reusable capacity-check Google Form, and make
+ * sure its onFormSubmit trigger is installed. The form id + its three item ids +
+ * the published URL are cached in DocumentProperties so every check reuses the
+ * same form and the submit trigger can route responses by CheckID.
+ *
+ * The form has three items: a short-text "Reference code" (we prefill the
+ * CheckID per partner — please-don't-edit), a Yes/No multiple choice, and a
+ * short-text meals count. Responses are NOT sent to a destination sheet — the
+ * onFormSubmit trigger writes straight back to CapacityChecks.
+ */
+function ensureCapacityForm_() {
+  const props = PropertiesService.getDocumentProperties();
+  let form = null;
+  const formId = props.getProperty(CAPACITY_PROPS.FORM_ID);
+  if (formId) {
+    try { form = FormApp.openById(formId); } catch (err) { form = null; }
+  }
+
+  if (!form) {
+    form = FormApp.create('Feed the City — Pre-Event Capacity Check');
+    form.setDescription(
+      'Confirm whether your organization can receive food for an upcoming Feed ' +
+      'the City distribution. This form is keyed to a unique reference code from ' +
+      'your email — please leave that field as-is.');
+    form.setCollectEmail(false);
+    form.setAllowResponseEdits(false);
+    form.setConfirmationMessage(
+      'Thank you — your response has been recorded. Feed the City will follow up if needed.');
+
+    const checkItem = form.addTextItem()
+      .setTitle(CAPACITY_FORM_TITLES.CHECKID)
+      .setHelpText('Auto-filled from your email link. Please do not change this.')
+      .setRequired(true);
+    const yesNo = form.addMultipleChoiceItem()
+      .setTitle(CAPACITY_FORM_TITLES.YESNO)
+      .setChoiceValues(['Yes — we can take it', 'No — we cannot this time'])
+      .setRequired(true);
+    const meals = form.addTextItem()
+      .setTitle(CAPACITY_FORM_TITLES.MEALS)
+      .setHelpText('Approximate number of meals you can take (leave blank or 0 if not).')
+      .setRequired(false);
+
+    props.setProperty(CAPACITY_PROPS.FORM_ID, form.getId());
+    props.setProperty(CAPACITY_PROPS.PUBLISHED_URL, form.getPublishedUrl());
+    props.setProperty(CAPACITY_PROPS.ITEM_CHECKID, String(checkItem.getId()));
+    props.setProperty(CAPACITY_PROPS.ITEM_YESNO, String(yesNo.getId()));
+    props.setProperty(CAPACITY_PROPS.ITEM_MEALS, String(meals.getId()));
+  }
+
+  ensureCapacityFormTrigger_(form);
+  return form;
+}
+
+/**
+ * Ensure exactly one onFormSubmit trigger points at this form. Deletes any stale
+ * capacity-submit trigger left pointing at a previous form (e.g. if the form was
+ * re-created), then installs one if missing. Idempotent.
+ */
+function ensureCapacityFormTrigger_(form) {
+  const formId = form.getId();
+  let haveForThisForm = false;
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() !== CAPACITY_TRIGGER_FN) return;
+    if (t.getTriggerSourceId() === formId) haveForThisForm = true;
+    else ScriptApp.deleteTrigger(t); // stale — pointed at an old form
+  });
+  if (!haveForThisForm) {
+    ScriptApp.newTrigger(CAPACITY_TRIGGER_FN).forForm(form).onFormSubmit().create();
+  }
+}
+
+/**
+ * Build a form URL prefilled with this CheckID so the partner's response is
+ * keyed to the right CapacityChecks row. Falls back to the plain published URL
+ * if the prefill item can't be resolved.
+ */
+function capacityPrefilledUrl_(form, checkId) {
+  const props = PropertiesService.getDocumentProperties();
+  let textItem = null;
+  const itemId = props.getProperty(CAPACITY_PROPS.ITEM_CHECKID);
+  if (itemId) {
+    try { textItem = form.getItemById(Number(itemId)).asTextItem(); } catch (err) { textItem = null; }
+  }
+  if (!textItem) {
+    const items = form.getItems(FormApp.ItemType.TEXT);
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].getTitle() === CAPACITY_FORM_TITLES.CHECKID) { textItem = items[i].asTextItem(); break; }
+    }
+  }
+  if (!textItem) return form.getPublishedUrl();
+
+  const fr = form.createResponse();
+  fr.withItemResponse(textItem.createResponse(String(checkId)));
+  return fr.toPrefilledUrl();
+}
+
+/**
+ * Installable onFormSubmit trigger. Routes a capacity-check response back to its
+ * CapacityChecks row by CheckID: sets Status (confirmed/declined), ConfirmedMeals
+ * (the partner's number, or their RequestedMeals if they said yes without one, or
+ * 0 if they declined), and ResponseTimestamp. Also stamps the matching link's
+ * last_capacity_confirmed. Unknown / missing CheckIDs are ignored. Runs as the
+ * user who installed the trigger, so it has full access to the sheet + links.
+ */
+function onCapacityFormSubmit(e) {
+  if (!e || !e.response) return;
+
+  const props = PropertiesService.getDocumentProperties();
+  const idCheck = props.getProperty(CAPACITY_PROPS.ITEM_CHECKID);
+  const idYesNo = props.getProperty(CAPACITY_PROPS.ITEM_YESNO);
+  const idMeals = props.getProperty(CAPACITY_PROPS.ITEM_MEALS);
+
+  let checkId = '', yesNo = '', mealsRaw = '';
+  e.response.getItemResponses().forEach(function(ir) {
+    const item = ir.getItem();
+    const id = String(item.getId());
+    const title = item.getTitle();
+    const val = ir.getResponse();
+    if (id === idCheck || title === CAPACITY_FORM_TITLES.CHECKID) checkId = String(val || '').trim();
+    else if (id === idYesNo || title === CAPACITY_FORM_TITLES.YESNO) yesNo = String(val || '').trim();
+    else if (id === idMeals || title === CAPACITY_FORM_TITLES.MEALS) mealsRaw = String(val || '').trim();
+  });
+  if (!checkId) return; // can't route without the reference code
+
+  const saidYes = /^yes/i.test(yesNo);
+  const meals = parseMeals_(mealsRaw);
+
+  withLock_(function() {
+    const spec = CONFIG.SHEETS.CAPACITY;
+    const sheet = getOrCreateSheet_(spec.name);
+    ensureCapacityHeaders_(sheet);
+    const map = headerMap_(sheet);
+    const target = readAllCapacityChecks_(sheet, map).filter(function(r) {
+      return String(r.CheckID || '').trim() === checkId;
+    })[0];
+    if (!target) return; // unknown code — ignore
+
+    const confirmedMeals = saidYes
+      ? (meals !== null ? meals : (Number(target.RequestedMeals) || 0))
+      : 0;
+    writeCapacityRow_(sheet, target._row, {
+      CheckID: target.CheckID,
+      EventID: target.EventID,
+      PartnerID: target.PartnerID,
+      EventDate: target.EventDate,
+      RequestedMeals: target.RequestedMeals,
+      ConfirmedMeals: confirmedMeals,
+      Status: saidYes ? 'confirmed' : 'declined',
+      SentTimestamp: target.SentTimestamp,
+      ResponseTimestamp: new Date()
+    }, map);
+
+    if (saidYes) touchLinkCapacityConfirmed_(target.EventID, target.PartnerID);
+  });
+}
+
+/**
+ * Stamp the EventPartnerLinks row for (eventId, partnerId) with today's date in
+ * last_capacity_confirmed (DATA_MODEL Tab 2 / PRD §7.3). No-ops if the column or
+ * link row is absent. Does NOT take the document lock — it's only ever called
+ * from inside onCapacityFormSubmit's lock (LockService locks aren't reentrant).
+ */
+function touchLinkCapacityConfirmed_(eventId, partnerId) {
+  const sheet = getOrCreateSheet_(CONFIG.SHEETS.LINKS.name);
+  const map = headerMap_(sheet);
+  if (!map.last_capacity_confirmed) return;
+  const row = readAllLinks_(sheet, map).filter(function(l) {
+    return l.EventID === eventId && l.PartnerID === partnerId;
+  })[0];
+  if (!row) return;
+  const today = Utilities.formatDate(new Date(), SpreadsheetApp.getActive().getSpreadsheetTimeZone(), 'yyyy-MM-dd');
+  sheet.getRange(row._row, map.last_capacity_confirmed).setValue(today);
+}
+
+/**
+ * Email a partner contact the capacity ask + their unique form link (MailApp).
+ * Internal use of the private contact_email — never published. Sends a plain +
+ * branded HTML body.
+ */
+function sendCapacityEmail_(to, contactName, orgName, eventLabel, eventDate, requested, url) {
+  const greeting = contactName ? ('Hi ' + contactName + ',') : 'Hi there,';
+  const org = orgName || 'your organization';
+  const subject = 'Feed the City — can you take food on ' + eventDate + '?';
+
+  const plain = greeting + '\n\n' +
+    'Feed the City has an upcoming distribution on ' + eventDate +
+    (eventLabel ? ' (' + eventLabel + ')' : '') + '.\n\n' +
+    'Can ' + org + ' take approximately ' + requested + ' meals this cycle?\n\n' +
+    'Please confirm here (takes about 10 seconds):\n' + url + '\n\n' +
+    'This link is unique to your organization — please don\'t forward it.\n\n' +
+    'Thank you,\nFeed the City';
+
+  const html =
+    '<div style="font-family:Roboto,Arial,sans-serif;color:#1A1A1A;max-width:520px;line-height:1.5">' +
+      '<p style="margin:0 0 12px">' + escHtml_(greeting) + '</p>' +
+      '<p style="margin:0 0 12px">Feed the City has an upcoming distribution on <b>' + escHtml_(eventDate) + '</b>' +
+        (eventLabel ? ' (' + escHtml_(eventLabel) + ')' : '') + '.</p>' +
+      '<p style="margin:0 0 16px">Can <b>' + escHtml_(org) + '</b> take approximately <b>' + escHtml_(requested) +
+        ' meals</b> this cycle?</p>' +
+      '<p style="margin:0 0 20px">' +
+        '<a href="' + escHtml_(url) + '" style="background:#FF6500;color:#fff;text-decoration:none;' +
+        'font-weight:700;padding:11px 18px;border-radius:8px;display:inline-block">Confirm capacity →</a>' +
+      '</p>' +
+      '<p style="margin:0 0 4px;font-size:12px;color:#6B7280">This link is unique to your organization — please don\'t forward it.</p>' +
+      '<p style="margin:16px 0 0">Thank you,<br><b style="color:#003366">Feed the City</b></p>' +
+    '</div>';
+
+  MailApp.sendEmail({ to: to, subject: subject, body: plain, htmlBody: html, name: 'Feed the City' });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — capacity helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Rank the nearest ACTIVE partners NOT already linked to the event as suggested
+ * backups. Ranked by great-circle distance from the event when both have
+ * coordinates; if the event has no coordinates, ranked by capacity instead
+ * (byCapacity=true so the dialog can say so). Partners without coordinates sort
+ * last in distance mode. Capped at CAPACITY_BACKUP_LIMIT.
+ */
+function suggestBackups_(eventId, excludeIds) {
+  const ev = readEventsReference_().filter(function(e) { return e.EventID === eventId; })[0];
+  const evLat = ev ? Number(ev.Latitude) : NaN;
+  const evLng = ev ? Number(ev.Longitude) : NaN;
+  const haveEvCoords = validLatLng_(evLat, evLng);
+
+  const candidates = readAllPartners_().filter(function(p) {
+    if (excludeIds[p.PartnerID]) return false;
+    return String(p.partnership_status || '').trim().toLowerCase() === 'active';
+  }).map(function(p) {
+    const lat = Number(p.latitude), lng = Number(p.longitude);
+    const has = validLatLng_(lat, lng);
+    return {
+      partnerId: p.PartnerID,
+      name: p.organization_name,
+      location: partnerLocation_(p),
+      capacity: Number(p.monthly_capacity_meals) || 0,
+      pathway: String(p.pathway || '').trim(),
+      cold_storage: String(p.cold_storage || '').trim(),
+      hasEmail: !!String(p.contact_email || '').trim(),
+      distanceMiles: (haveEvCoords && has) ? haversineMiles_(evLat, evLng, lat, lng) : null
+    };
+  });
+
+  const byCapacity = !haveEvCoords;
+  candidates.sort(function(a, b) {
+    if (byCapacity) return b.capacity - a.capacity;
+    if (a.distanceMiles === null && b.distanceMiles === null) return b.capacity - a.capacity;
+    if (a.distanceMiles === null) return 1;
+    if (b.distanceMiles === null) return -1;
+    return a.distanceMiles - b.distanceMiles;
+  });
+
+  const items = candidates.slice(0, CAPACITY_BACKUP_LIMIT).map(function(c) {
+    if (c.distanceMiles !== null) c.distanceMiles = Math.round(c.distanceMiles * 10) / 10;
+    return c;
+  });
+  return { byCapacity: byCapacity, hasEventCoords: haveEvCoords, items: items };
+}
+
+/** Great-circle distance in miles between two lat/long points (haversine). */
+function haversineMiles_(lat1, lng1, lat2, lng2) {
+  const R = 3958.8; // Earth radius, miles
+  const toRad = function(d) { return d * Math.PI / 180; };
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Split `total` meals across `n` partners as evenly as possible with NO remainder
+ * lost: the first (total mod n) partners get one extra. So sum(result) === total,
+ * which is what View Capacity Status reconstructs as the expected event total.
+ */
+function splitMeals_(total, n) {
+  total = Math.max(0, Math.round(Number(total) || 0));
+  n = Math.max(1, Math.round(n));
+  const base = Math.floor(total / n);
+  const rem = total - base * n;
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(base + (i < rem ? 1 : 0));
+  return out;
+}
+
+/** Parse a meals count out of free text ("about 150" → 150); null if none. */
+function parseMeals_(raw) {
+  if (raw === '' || raw === null || raw === undefined) return null;
+  const m = String(raw).replace(/[,\s]/g, '').match(/-?\d+(\.\d+)?/);
+  if (!m) return null;
+  const n = Math.round(Number(m[0]));
+  return isFinite(n) ? Math.max(0, n) : null;
+}
+
+/** Normalize a stored date (Date or text) to a 'YYYY-MM-DD' string for keys/labels. */
+function ymd_(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, SpreadsheetApp.getActive().getSpreadsheetTimeZone(), 'yyyy-MM-dd');
+  }
+  return String(v).trim();
+}
+
+/** Format a stored timestamp (Date or text) to 'YYYY-MM-DD HH:mm' for the client. */
+function formatTs_(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, SpreadsheetApp.getActive().getSpreadsheetTimeZone(), 'yyyy-MM-dd HH:mm');
+  }
+  return String(v);
+}
+
+/** HTML-escape for email bodies (mirrors the dialogs' client-side esc()). */
+function escHtml_(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+  });
+}
+
+/**
+ * All CapacityChecks rows as objects keyed by header, each tagged with its
+ * 1-based sheet row in `_row`. Mirrors readAllLinks_. Optionally pass a pre-read
+ * sheet + header map to avoid a re-read inside the upsert / submit handler.
+ */
+function readAllCapacityChecks_(sheet, map) {
+  const spec = CONFIG.SHEETS.CAPACITY;
+  sheet = sheet || getOrCreateSheet_(spec.name);
+  map = map || headerMap_(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const lastCol = sheet.getLastColumn();
+  const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const out = [];
+  values.forEach(function(vals, i) {
+    const obj = { _row: i + 2 };
+    spec.headers.forEach(function(h) { obj[h] = map[h] ? vals[map[h] - 1] : ''; });
+    if (String(obj.CheckID || '').trim() || String(obj.EventID || '').trim() ||
+        String(obj.PartnerID || '').trim()) {
+      out.push(obj);
+    }
+  });
+  return out;
+}
+
+/**
+ * Write a CapacityChecks object across a row by header name, then re-apply the
+ * Status dropdown to that row (so a freshly appended row past the pre-validated
+ * range still constrains Status). Mirrors writeLinkRow_.
+ */
+function writeCapacityRow_(sheet, row, obj, map) {
+  const spec = CONFIG.SHEETS.CAPACITY;
+  map = map || headerMap_(sheet);
+  const width = Math.max(sheet.getLastColumn(), spec.headers.length);
+  const range = sheet.getRange(row, 1, 1, width);
+  const rowVals = range.getValues()[0];
+  spec.headers.forEach(function(h) {
+    if (!map[h]) return;
+    const v = obj[h];
+    rowVals[map[h] - 1] = (v === undefined || v === null) ? '' : v;
+  });
+  range.setValues([rowVals]);
+  if (map.Status) {
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(spec.dropdowns.Status, true)
+      .setAllowInvalid(false)
+      .build();
+    sheet.getRange(row, map.Status).setDataValidation(rule);
+  }
+}
+
+/**
+ * Ensure the CapacityChecks tab has its header row — laying down the full set if
+ * blank, or appending any missing spec header — so a capacity write never lands
+ * in a header-less sheet. Mirrors ensureLinkHeaders_.
+ */
+function ensureCapacityHeaders_(sheet) {
+  const spec = CONFIG.SHEETS.CAPACITY;
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+    .map(function(v) { return String(v || '').trim(); });
+
+  if (existing.every(function(h) { return !h; })) {
+    sheet.getRange(1, 1, 1, spec.headers.length).setValues([spec.headers]);
+    return;
+  }
+  spec.headers.forEach(function(h) {
+    if (existing.indexOf(h) === -1) {
+      const nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue(h);
+      existing.push(h);
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------

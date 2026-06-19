@@ -9,12 +9,12 @@ Column-by-column schema for the FTC Distribution Tool. Adopts the HSDS
 `CONFIG.LINK_HEADERS`) MUST match the column names below, in this exact order.
 Change one, change the other.
 
-Two data tabs (`Partners`, `EventPartnerLinks`) live in the **Partners
-workbook** — a *separate* Google Sheets workbook (`FTC Distribution (Partners)`)
-from the public event-map Events sheet. That separation is the privacy wall. A
-third tab, `Events_Reference`, is a **read-only mirror** of the public Events
-sheet (Phase 3a; see Tab 3 below) used only as a join target — it holds no
-partner data.
+Three internal data tabs (`Partners`, `EventPartnerLinks`, `CapacityChecks`)
+live in the **Partners workbook** — a *separate* Google Sheets workbook
+(`FTC Distribution (Partners)`) from the public event-map Events sheet. That
+separation is the privacy wall. A fourth tab, `Events_Reference`, is a
+**read-only mirror** of the public Events sheet (Phase 3a; see Tab 3 below) used
+only as a join target — it holds no partner data.
 
 > **Privacy wall.** The `Partners` and `EventPartnerLinks` tabs are internal.
 > They are never written to a published CSV and never served on a public URL.
@@ -191,6 +191,40 @@ internal):
 
 The public map reads these two CSVs plus `Events_Reference` (Tab 3, also
 published) to draw event pins, partner pins, and the connecting lines.
+
+---
+
+## Tab 6 — `CapacityChecks` (Phase 4)
+
+The pre-event capacity-check log. One row per (event, date, partner) ask, created
+by **Run Capacity Check** (`runCapacityCheck()` in `apps-script/Code.gs`) and
+updated by the Google-Form submit trigger (`onCapacityFormSubmit()`). **Internal
+only** — like `Partners` / `EventPartnerLinks`, it is never published and holds no
+data in the public view. Built by `Set up sheets`; `CheckID` auto-fills via the
+`onEdit` trigger; `Status` is a reject-on-invalid dropdown.
+
+| # | Column | Type | Req | Validation / notes |
+|---:|---|---|:--:|---|
+| 1 | `CheckID` | UUID (text) | ✅ | Primary key for the check row. The **reference code** prefilled into the partner's form link so responses route back to this exact row. |
+| 2 | `EventID` | UUID (text) | ✅ | **Foreign key → Events (`EventID`).** |
+| 3 | `PartnerID` | UUID (text) | ✅ | **Foreign key → `Partners.PartnerID`.** |
+| 4 | `EventDate` | date (`YYYY-MM-DD`) | | The upcoming distribution date this ask is for. Part of the upsert key (`EventID`+`PartnerID`+`EventDate`). |
+| 5 | `RequestedMeals` | number | | The partner's share of the expected event total (split evenly, no remainder lost). `sum(RequestedMeals)` per group reconstructs the expected total in **View Capacity Status**. |
+| 6 | `ConfirmedMeals` | number | | Set on response: the partner's number (or their `RequestedMeals` if they said yes without one, or `0` if declined). |
+| 7 | `Status` | enum | | **Dropdown:** `sent` \| `confirmed` \| `declined` \| `no-response`. `sent` on creation; the form trigger flips it to `confirmed`/`declined`. |
+| 8 | `SentTimestamp` | datetime | | When the ask email went out (reset on each re-run). |
+| 9 | `ResponseTimestamp` | datetime | | When the partner submitted the form (reset to blank on a re-run). |
+
+> **Responses come from a Google Form, not email replies.** One reusable form
+> (id/items cached in `DocumentProperties`) has a prefilled `CheckID`, a Yes/No
+> choice, and a meals count. An installable `onFormSubmit` trigger writes back to
+> columns 6–9 by `CheckID`, and stamps the matching `EventPartnerLinks` row's
+> `last_capacity_confirmed`.
+
+> **Shortfall + backups.** When `sum(ConfirmedMeals) < sum(RequestedMeals)` for an
+> event+date, View Capacity Status ranks the nearest **active** partners NOT yet
+> linked to that event (by lat/long; by capacity if the event has no coordinates)
+> as suggested backups.
 
 ---
 

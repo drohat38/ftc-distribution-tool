@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  :root{
+    --orange:#FF6500;--orange-lt:#FFF1E6;--orange-dk:#CC5000;
+    --navy:#003366;
+    --ink:#1A1A1A;--ink2:#3c4043;--gray:#6B7280;
+    --line:#E5E7EB;--line-soft:#F1F3F4;--bg:#FAFAF7;
+    --green:#059669;--red:#DC2626;--amber:#D97706;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);padding:18px 22px;font-size:13px;line-height:1.4}
+  h2{font-size:18px;font-weight:700;margin-bottom:4px;color:var(--navy)}
+  .sub{color:var(--gray);font-size:12px;line-height:1.45;margin-bottom:14px}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px}
+  .field{margin-bottom:0}
+  label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray);margin-bottom:4px}
+  select{width:100%;border:1.5px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);font:inherit;padding:9px 10px}
+  select:focus{outline:none;border-color:var(--orange)}
+
+  /* Totals bar */
+  .totals{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 10px;text-align:center}
+  .stat .n{font-size:19px;font-weight:800;color:var(--navy);line-height:1.1}
+  .stat .l{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray);margin-top:3px}
+  .stat.short .n{color:var(--red)}
+  .stat.ok .n{color:var(--green)}
+
+  .count-line{font-size:11px;color:var(--navy);font-weight:600;margin:0 0 8px}
+  .list{list-style:none}
+  .item{border:1px solid var(--line);border-radius:9px;padding:10px 11px;margin-bottom:8px;background:#fff}
+  .item-top{display:flex;align-items:center;gap:8px}
+  .item-name{font-weight:700;color:var(--navy);font-size:13px;flex:1}
+  .item-loc{font-size:11px;color:var(--gray);margin-top:2px}
+  .item-meta{font-size:11px;color:var(--ink2);margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 14px}
+  .item-meta b{color:var(--ink)}
+  .badge{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:4px}
+  .badge.confirmed{background:#D1FAE5;color:#065F46}
+  .badge.declined{background:#FEE2E2;color:#991B1B}
+  .badge.sent{background:#FEF3C7;color:#92400E}
+  .badge.stale{background:#FEE2E2;color:#991B1B}
+
+  .shortfall{padding:11px 12px;border-radius:8px;background:#FEE2E2;color:#991B1B;font-size:12px;line-height:1.5;margin-bottom:12px}
+  .shortfall b{font-weight:800}
+  .ok-banner{padding:11px 12px;border-radius:8px;background:#D1FAE5;color:#065F46;font-size:12px;line-height:1.5;margin-bottom:12px}
+  .bk-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--orange);margin:4px 0 8px}
+  .bk{border:1px dashed var(--line);border-radius:9px;padding:9px 10px;margin-bottom:7px;background:#fff}
+  .bk-top{display:flex;align-items:center;gap:8px}
+  .bk-name{font-weight:700;color:var(--navy);font-size:12.5px;flex:1}
+  .bk-dist{font-size:11px;font-weight:700;color:var(--orange)}
+  .bk-meta{font-size:11px;color:var(--ink2);margin-top:4px;display:flex;flex-wrap:wrap;gap:3px 12px}
+
+  .empty{padding:16px;text-align:center;color:var(--gray);font-size:12px;background:#fff;border:1px dashed var(--line);border-radius:9px}
+  .notice{padding:12px;border-radius:8px;background:var(--orange-lt);border:1.5px solid #FBCF9C;color:#8a3b00;font-size:12px;line-height:1.5}
+  .actions{display:flex;gap:8px;margin-top:4px}
+  button.btn{padding:10px 13px;background:#fff;border:1.5px solid var(--line);color:var(--ink);border-radius:8px;font:inherit;font-weight:500;cursor:pointer}
+</style>
+</head>
+<body>
+  <h2>Capacity Check Status</h2>
+  <div class="sub">Per event + date: each partner's ask vs. confirmed meals, and — if the confirmed total falls short — the nearest unlinked active partners as backups. <b>Internal only.</b></div>
+
+  <div id="loading" class="notice">Loading capacity checks…</div>
+
+  <div id="ui" style="display:none">
+    <div class="panel">
+      <div class="field">
+        <label>Event check</label>
+        <select id="picker" onchange="loadStatus()"></select>
+      </div>
+    </div>
+    <div id="results"></div>
+    <div class="actions">
+      <button type="button" class="btn" onclick="closeDialog()">Done</button>
+    </div>
+  </div>
+
+  <div id="empty" class="notice" style="display:none">
+    <b>No capacity checks yet.</b>
+    Run <b>FTC ▸ Run Capacity Check</b> for an upcoming event, then come back here to track responses.
+  </div>
+
+<script>
+let GROUPS = [];
+
+function canUseAppsScript(){
+  return typeof google !== 'undefined' && google.script && google.script.run;
+}
+function esc(v){
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+  });
+}
+function closeDialog(){ if (canUseAppsScript()) google.script.host.close(); }
+
+function statusBadge(st){
+  const s = (st || 'sent').toLowerCase();
+  if (s === 'confirmed') return '<span class="badge confirmed">confirmed</span>';
+  if (s === 'declined') return '<span class="badge declined">declined</span>';
+  if (s === 'no-response') return '<span class="badge sent">no response</span>';
+  return '<span class="badge sent">awaiting</span>';
+}
+
+function init(data){
+  GROUPS = data.groups || [];
+  document.getElementById('loading').style.display = 'none';
+  if (!GROUPS.length){
+    document.getElementById('empty').style.display = 'block';
+    return;
+  }
+  document.getElementById('ui').style.display = 'block';
+  const picker = document.getElementById('picker');
+  picker.innerHTML = '<option value="">Pick an event check…</option>';
+  GROUPS.forEach(function(g, i){
+    const o = document.createElement('option');
+    o.value = String(i);
+    const tag = g.shortfall > 0 ? '  ⚠ short ' + g.shortfall : '  ✓';
+    o.textContent = g.label + '  (' + g.confirmedMeals + '/' + g.expected + ' meals)' + tag;
+    picker.appendChild(o);
+  });
+}
+
+function loadStatus(){
+  const idx = document.getElementById('picker').value;
+  const results = document.getElementById('results');
+  if (idx === ''){ results.innerHTML = ''; return; }
+  const g = GROUPS[Number(idx)];
+  results.innerHTML = '<div class="notice">Loading…</div>';
+  if (!canUseAppsScript()) return;
+  google.script.run
+    .withSuccessHandler(renderStatus)
+    .withFailureHandler(function(err){
+      results.innerHTML = '<div class="empty">Could not load: ' + esc(err && err.message ? err.message : err) + '</div>';
+    })
+    .getCapacityStatus(g.eventId, g.eventDate);
+}
+
+function renderStatus(r){
+  const c = r.counts || { total:0, confirmed:0, declined:0, pending:0 };
+  let html = '';
+
+  html += '<div class="totals">' +
+    '<div class="stat"><div class="n">' + esc(r.expected) + '</div><div class="l">Asked</div></div>' +
+    '<div class="stat ' + (r.shortfall > 0 ? '' : 'ok') + '"><div class="n">' + esc(r.confirmedMeals) + '</div><div class="l">Confirmed</div></div>' +
+    '<div class="stat ' + (r.shortfall > 0 ? 'short' : 'ok') + '"><div class="n">' + esc(r.shortfall) + '</div><div class="l">Shortfall</div></div>' +
+    '</div>';
+
+  if (r.shortfall > 0){
+    html += '<div class="shortfall"><b>Short by ' + esc(r.shortfall) + ' meals.</b> ' +
+      c.pending + ' partner' + (c.pending === 1 ? '' : 's') + ' still to respond' +
+      (c.declined ? ', ' + c.declined + ' declined' : '') + '. Consider the backups below.</div>';
+  } else {
+    html += '<div class="ok-banner"><b>Covered.</b> Confirmed meals meet the expected total for this event.</div>';
+  }
+
+  html += '<div class="count-line">' + esc(r.eventLabel) + ' · ' + esc(r.eventDate) +
+    ' — ' + c.total + ' partner' + (c.total === 1 ? '' : 's') +
+    ' (' + c.confirmed + ' confirmed, ' + c.declined + ' declined, ' + c.pending + ' awaiting)</div>';
+
+  if ((r.items || []).length){
+    html += '<ul class="list">' + r.items.map(function(it){
+      const meta = [];
+      meta.push('<b>Asked:</b> ' + esc(it.requested));
+      if (it.status === 'confirmed') meta.push('<b>Confirmed:</b> ' + esc(it.confirmed));
+      if (it.sent) meta.push('<b>Sent:</b> ' + esc(it.sent));
+      if (it.responded) meta.push('<b>Replied:</b> ' + esc(it.responded));
+      return '<li class="item"><div class="item-top">' +
+        '<span class="item-name">' + esc(it.name) + '</span>' + statusBadge(it.status) +
+        (it.stale ? ' <span class="badge stale">partner missing</span>' : '') +
+        '</div>' +
+        (it.location ? '<div class="item-loc">' + esc(it.location) + '</div>' : '') +
+        '<div class="item-meta">' + meta.join('') + '</div></li>';
+    }).join('') + '</ul>';
+  } else {
+    html += '<div class="empty">No partners in this check.</div>';
+  }
+
+  if (r.backups && r.backups.items && r.backups.items.length){
+    html += '<div class="bk-title">Suggested backups — nearest unlinked active partners' +
+      (r.backups.byCapacity ? ' (by capacity — event has no coordinates)' : '') + '</div>';
+    html += r.backups.items.map(function(b){
+      const meta = [];
+      meta.push('<b>Capacity:</b> ' + esc(b.capacity) + '/mo');
+      if (b.pathway) meta.push('<b>Pathway:</b> ' + esc(b.pathway));
+      if (b.cold_storage) meta.push('<b>Cold storage:</b> ' + esc(b.cold_storage));
+      if (!b.hasEmail) meta.push('<b style="color:#991B1B">no email on file</b>');
+      const dist = (b.distanceMiles !== null && b.distanceMiles !== undefined)
+        ? esc(b.distanceMiles) + ' mi' : '';
+      return '<div class="bk"><div class="bk-top">' +
+        '<span class="bk-name">' + esc(b.name) + '</span>' +
+        (dist ? '<span class="bk-dist">' + dist + '</span>' : '') +
+        '</div>' +
+        (b.location ? '<div class="item-loc">' + esc(b.location) + '</div>' : '') +
+        '<div class="bk-meta">' + meta.join('') + '</div></div>';
+    }).join('');
+    html += '<div class="sub" style="margin-top:8px">Link a backup via <b>FTC ▸ Link Partner to Event(s)</b>, then re-run the check.</div>';
+  } else if (r.shortfall > 0){
+    html += '<div class="empty">No unlinked active partners available as backups.</div>';
+  }
+
+  document.getElementById('results').innerHTML = html;
+}
+
+if (canUseAppsScript()){
+  google.script.run
+    .withSuccessHandler(init)
+    .withFailureHandler(function(err){
+      document.getElementById('loading').innerHTML = '<b>Could not load.</b> ' + esc(err && err.message ? err.message : err);
+    })
+    .getCapacityStatusData();
+} else {
+  document.getElementById('loading').innerHTML =
+    '<b>Preview outside Google Sheets.</b> Open this from the FTC menu → View Capacity Status.';
+}
+</script>
+</body>
+</html>

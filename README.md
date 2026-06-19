@@ -16,12 +16,17 @@ The two link by `EventID` (stable UUIDs already used by the event map — see
 
 ## Status
 
-🚧 **Phase 2a — data foundation.** A separate, private `FTC Distribution
-(Partners)` Google Sheets workbook exists with a bound Apps Script project; the
-`FTC` menu sets up the `Partners` and `EventPartnerLinks` tabs (headers,
-dropdowns, auto-UUID). The Add Partner form, geocoding, the private map, and the
-capacity check are still to come. See the build phases in [`PRD.md`](PRD.md) §10
-and the schema in [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
+🚧 **Phase 4 — pre-event capacity check.** A separate, private `FTC Distribution
+(Partners)` Google Sheets workbook exists with a bound Apps Script project. The
+`FTC` menu sets up the `Partners`, `EventPartnerLinks`, and `CapacityChecks` tabs
+(headers, dropdowns, auto-UUID) and covers: Add/Edit Partner with one-time
+geocoding (Phase 2b); Refresh Events + Link Partner to Event(s) + View Links
+(Phase 3a); the public distribution map via Rebuild public view (Phase 3b); and
+now **Run Capacity Check** / **View Capacity Status** — emailing active partners
+to confirm volume the week before an event, logging Google-Form responses back to
+`CapacityChecks`, and suggesting nearest backups on a shortfall. See the build
+phases in [`PRD.md`](PRD.md) §10 and the schema in
+[`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 
 ## Stack
 

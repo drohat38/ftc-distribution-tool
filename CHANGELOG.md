@@ -6,6 +6,53 @@ project will adopt [Semantic Versioning](https://semver.org/) once it ships.
 
 ## [Unreleased]
 
+### Added — Phase 4: Pre-event capacity check (Apps Script)
+
+The week-before-an-event workflow that confirms each linked partner can absorb
+the expected volume, logs structured responses, and flags a shortfall with
+nearest backups (PRD §7.3). Uses the **internal** `Partners.contact_email` to
+reach partners — never the public view.
+
+- **`CapacityChecks` tab** (new, in `CONFIG.SHEETS` → built by `Set up sheets`,
+  auto-UUID via `onEdit`): `CheckID`, `EventID`, `PartnerID`, `EventDate`,
+  `RequestedMeals`, `ConfirmedMeals`, `Status`
+  (`sent` | `confirmed` | `declined` | `no-response` dropdown), `SentTimestamp`,
+  `ResponseTimestamp`. Internal-only — never added to the public view.
+- **Run Capacity Check** (`runCapacityCheck()`, new `FTC ▸ Run Capacity Check`
+  menu item + `RunCapacityCheckDialog.html`) — pick an event (from
+  `Events_Reference`), its upcoming date, and the expected total meals. For each
+  **active** partner linked to that event in `EventPartnerLinks` that has a
+  contact email, it upserts a `CapacityChecks` row (`Status=sent`, keyed by
+  `EventID`+`PartnerID`+`EventDate` so a re-run resends instead of duplicating),
+  splits the expected total evenly across them with no remainder lost
+  (`splitMeals_`), and emails each contact via `MailApp` the date, their ask
+  (~N meals), and a unique Google-Form link prefilled with that row's `CheckID`.
+  Partners with no email are skipped and reported.
+- **Responses via a Google Form** (not reply-scanning) — one reusable form is
+  created lazily (`ensureCapacityForm_`, id/items/URL cached in
+  `DocumentProperties`): a prefilled "reference code" (`CheckID`), a Yes/No
+  multiple choice, and a meals count. An installable `onFormSubmit` trigger
+  (`onCapacityFormSubmit`, installed/repaired by `ensureCapacityFormTrigger_`)
+  routes each response back to its row by `CheckID` — setting `Status`
+  (`confirmed`/`declined`), `ConfirmedMeals` (their number, or the ask if they
+  said yes without one, or 0), and `ResponseTimestamp` — and stamps the link's
+  `last_capacity_confirmed` (DATA_MODEL Tab 2).
+- **View Capacity Status** (`getCapacityStatus()`, new `FTC ▸ View Capacity
+  Status` menu item + `ViewCapacityStatusDialog.html`) — per event+date: each
+  partner's ask vs. confirmed, the totals, and the expected total reconstructed
+  as `sum(RequestedMeals)`. When `sum(ConfirmedMeals) < expected`, it lists the
+  nearest **active** partners NOT yet linked to that event
+  (`suggestBackups_`/`haversineMiles_`, by lat/long; by capacity when the event
+  has no coordinates) with their capacity, pathway, and cold-storage as ranked
+  backups so produced food never has nowhere to go.
+- **`appsscript.json`** — added the `script.send_mail` (MailApp),
+  `script.scriptapp` (install the form-submit trigger), and `forms` (FormApp)
+  OAuth scopes. The dev re-authorizes on first run.
+
+> **Privacy wall.** Capacity checks use the private contact fields directly to
+> email partners (intended internal use); none of `CapacityChecks` is ever part
+> of the published `Partners_Public` / `Links_Public` view.
+
 ### Added — Phase 3b: Public distribution map (published CSVs, Cloudflare Pages)
 
 > **Privacy-wall decision (2026-06-19).** Dev explicitly chose "go fully public as
