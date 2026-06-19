@@ -6,6 +6,45 @@ project will adopt [Semantic Versioning](https://semver.org/) once it ships.
 
 ## [Unreleased]
 
+### Added — Phase 3a: Link partners to events (the join)
+- **Refresh Events** (`refreshEvents()` in `apps-script/Code.gs`) — fetches the
+  public event-map's published Events CSV (`CONFIG.EVENTS_CSV_URL`, the same URL
+  the public map reads — found in
+  `reference/feed-the-city-event-map/src/index.html`) and mirrors `EventID` +
+  public display fields (`City`, `State`, `Venue`, `Address`, `Status`,
+  `Paused`, `Latitude`, `Longitude`) into a new **read-only** `Events_Reference`
+  tab. Read-only both directions: only the already-public CSV is fetched, never
+  written back, and no partner data is written here (privacy wall — AGENTS.md
+  #1/#2). Each run clears + rewrites the data rows, deduped by `EventID`
+  (blank-`EventID` rows skipped + reported); the tab gets a warning-only
+  protection and a header note so it isn't hand-edited.
+- **Link Partner to Event(s)** (`apps-script/LinkPartnerDialog.html` +
+  `openLinkPartnerDialog()` / `getLinkDialogData()` / `linkPartnerToEvents()`) —
+  pick one partner (dropdown by name), multi-select one or more events (filtered
+  checkbox list showing "City — Venue" + live/paused badge, value = `EventID`),
+  set per-link `recurring_slot` and `active`. On submit, **upserts** one row per
+  pair into `EventPartnerLinks`: an existing `PartnerID`+`EventID` row is
+  **updated** (keeping its `LinkID`) rather than duplicated. Many-to-many — a
+  partner can link to many events and an event to many partners. Unknown/stale
+  event ids are skipped and reported.
+- **View Links** (`apps-script/ViewLinksDialog.html` +
+  `openViewLinksDialog()` / `getLinksForPartner()` / `getLinksForEvent()`) —
+  toggle "By partner" (a partner's linked events) or "By event" (an event's
+  linked partners); shows `active`, `recurring_slot`, and
+  `last_capacity_confirmed`, and flags links whose event/partner is no longer
+  present.
+- `apps-script/Code.gs`: `CONFIG.EVENTS_CSV_URL` + `CONFIG.EVENTS_REF`; the
+  `EventPartnerLinks` `active` column is now a real checkbox
+  (`CONFIG.SHEETS.LINKS.checkboxes = ['active']`); added link/event read helpers
+  (`readAllPartners_`, `readEventsReference_`, `readAllLinks_`, `readAllRows_`,
+  `writeLinkRow_`, `ensureLinkHeaders_`, `eventLabel_`, `partnerLocation_`,
+  `isTruthyFlag_`, `fetchEventsCsv_`, `setupEventsReferenceSheet_`). FTC menu
+  adds **Refresh Events**, **Link Partner to Event(s)**, **View Links**.
+- `docs/DATA_MODEL.md`: documented the `Events_Reference` read-only mirror
+  (Tab 3) and the `(EventID, PartnerID)` upsert/uniqueness rule.
+- The Maps geocoder scope (`script.external_request`) added in Phase 2b also
+  covers the `UrlFetchApp` call to the Events CSV — no manifest change needed.
+
 ### Added — Phase 2b: Add / Edit Partner with geocoding
 - `apps-script/AddPartnerDialog.html` — Add Partner dialog (modeled on the event
   map's `AddEventDialog`, restyled to FTC brand: orange `#FF6500`, navy

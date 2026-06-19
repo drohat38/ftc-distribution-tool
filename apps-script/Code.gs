@@ -23,6 +23,19 @@
  *   - updatePartner(): updates a row by PartnerID, refreshes last_verified, and
  *     re-geocodes ONLY when the address changed.
  *
+ * Phase 3a — link partners to events (the many-to-many join):
+ *   - "Refresh Events" fetches the PUBLIC event-map's published Events CSV
+ *     (CONFIG.EVENTS_CSV_URL — the same URL the public map reads) and mirrors
+ *     EventID + public display fields into a read-only Events_Reference tab.
+ *     READ-ONLY: we only ever fetch this; we never write back to the public
+ *     sheet, and no partner data ever flows outward (privacy wall).
+ *   - "Link Partner to Event(s)" opens a dialog to pick one partner and
+ *     multi-select one or more events; linkPartnerToEvents() UPSERTS into
+ *     EventPartnerLinks (one row per pair) — updating the existing row when a
+ *     PartnerID+EventID pair already exists rather than duplicating it.
+ *   - "View Links" lists a partner's linked events, or an event's linked
+ *     partners (both directions of the join).
+ *
  * Geocoding reuses the event-map pattern verbatim: Maps.newGeocoder()
  * .setRegion('us').geocode(query). Cached in latitude/longitude, never
  * recomputed on map load (PRD §5).
@@ -41,6 +54,28 @@ const CONFIG = {
     HEADER_BG: '#FF6500',   // brand orange
     HEADER_TEXT: '#FFFFFF',
     NAVY: '#003366'         // brand navy (reserved for accents)
+  },
+
+  // The PUBLIC event-map's published Events CSV (read-only). This is the SAME
+  // URL the public map fetches (reference/feed-the-city-event-map/src/index.html,
+  // const CSV). Events data is already public; we only ever READ it to mirror it
+  // into the read-only Events_Reference tab so partner links have something to
+  // join against. We NEVER write back to it, and partner data never flows the
+  // other way (privacy wall — AGENTS.md rule #1/#2).
+  EVENTS_CSV_URL: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSYstAMLbxJyPYit_JRhg1mHFhD_EIsM4Znp8Joy_cY5fhNOlZOI4p-lC2VomCKM4S5mTcemkZiAcDM/pub?gid=0&single=true&output=csv',
+
+  // The local read-only mirror of the public Events sheet. Managed entirely by
+  // refreshEvents() — never hand-edited, never an auto-UUID tab (kept out of
+  // SHEETS so setupSheets()/onEdit leave it alone). Headers are a subset of the
+  // public Events CSV, named identically so we can map straight across. All
+  // columns here are already-public event fields — no partner data.
+  EVENTS_REF: {
+    name: 'Events_Reference',
+    idColumn: 'EventID',
+    headers: [
+      'EventID', 'City', 'State', 'Venue', 'Address',
+      'Status', 'Paused', 'Latitude', 'Longitude'
+    ]
   },
 
   // Tab specs. `headers` order MUST match docs/DATA_MODEL.md exactly.
@@ -73,8 +108,9 @@ const CONFIG = {
       ],
       required: ['LinkID', 'EventID', 'PartnerID', 'active'],
       dropdowns: {},
-      // `active` becomes a checkbox with the link dialog in Phase 3 (DATA_MODEL.md).
-      checkboxes: []
+      // `active` is a checkbox, switched on with the link dialog in Phase 3a
+      // (DATA_MODEL.md Tab 2). The Link dialog upsert writes a real boolean here.
+      checkboxes: ['active']
     }
   }
 };
@@ -88,6 +124,10 @@ function onOpen() {
     .createMenu(CONFIG.MENU)
     .addItem('Add Partner', 'openAddPartnerDialog')
     .addItem('Edit Partner', 'openEditPartnerDialog')
+    .addSeparator()
+    .addItem('Refresh Events', 'refreshEvents')
+    .addItem('Link Partner to Event(s)', 'openLinkPartnerDialog')
+    .addItem('View Links', 'openViewLinksDialog')
     .addSeparator()
     .addItem('Set up sheets', 'setupSheets')
     .addToUi();
@@ -268,6 +308,472 @@ function getPartnerForEdit(rowNumber) {
     data[k] = (raw[k] === null || raw[k] === undefined) ? '' : String(raw[k]);
   });
   return { rowNumber: row, data: data };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3a — Refresh Events (read-only mirror of the public Events sheet)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the public event-map's published Events CSV and (re)populate the
+ * read-only Events_Reference tab with EventID + public display fields.
+ *
+ * READ-ONLY in both directions: this only fetches the already-public CSV; it
+ * never writes back to the event-map sheet, and partner data never leaves this
+ * workbook (privacy wall — AGENTS.md #1/#2). The tab is a disposable mirror —
+ * every run clears its data rows and rewrites them, deduped by EventID. Rows
+ * with no EventID are skipped (they can't be joined to).
+ */
+function refreshEvents() {
+  const ui = SpreadsheetApp.getUi();
+  let result;
+  try {
+    result = withLock_(function() {
+      const rows = fetchEventsCsv_();
+      const spec = CONFIG.EVENTS_REF;
+      const sheet = getOrCreateSheet_(spec.name);
+      setupEventsReferenceSheet_(sheet);
+
+      const seen = {};
+      const out = [];
+      let skipped = 0;
+      rows.forEach(function(r) {
+        const id = String(r.EventID || '').trim();
+        if (!id) { skipped++; return; }
+        if (seen[id]) return;        // dedupe — keep the first row for an EventID
+        seen[id] = true;
+        out.push(spec.headers.map(function(h) {
+          const v = r[h];
+          return (v === undefined || v === null) ? '' : v;
+        }));
+      });
+
+      // Replace all data rows (header row 1 stays put).
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) {
+        sheet.getRange(2, 1, lastRow - 1, spec.headers.length).clearContent();
+      }
+      if (out.length) {
+        sheet.getRange(2, 1, out.length, spec.headers.length).setValues(out);
+      }
+      return { count: out.length, skipped: skipped };
+    });
+  } catch (err) {
+    ui.alert('Refresh Events failed', String(err && err.message ? err.message : err), ui.ButtonSet.OK);
+    return;
+  }
+
+  ui.alert(
+    'Events refreshed',
+    'Loaded ' + result.count + ' event' + (result.count === 1 ? '' : 's') +
+    ' into the read-only "Events_Reference" tab' +
+    (result.skipped ? ' (' + result.skipped + ' row(s) skipped — no EventID).' : '.') +
+    '\n\nThis tab mirrors the public Events sheet. Don\'t hand-edit it — re-run ' +
+    'Refresh Events to update. Now use "Link Partner to Event(s)" to connect partners.',
+    ui.ButtonSet.OK
+  );
+}
+
+/**
+ * Fetch + parse the published Events CSV into an array of row objects keyed by
+ * the CSV's own header names. Throws a friendly error on a non-200 response or
+ * an empty/headerless sheet.
+ */
+function fetchEventsCsv_() {
+  const resp = UrlFetchApp.fetch(CONFIG.EVENTS_CSV_URL, {
+    muteHttpExceptions: true,
+    followRedirects: true
+  });
+  const code = resp.getResponseCode();
+  if (code !== 200) {
+    throw new Error('The public Events CSV returned HTTP ' + code +
+      '. Its published link may have been turned off or changed.');
+  }
+  let text = resp.getContentText();
+  if (text && text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
+
+  const table = Utilities.parseCsv(text);
+  if (!table || table.length < 2) {
+    throw new Error('The Events sheet came back empty. Nothing to mirror.');
+  }
+  const headers = table[0].map(function(h) { return String(h || '').trim(); });
+  const rows = [];
+  for (let i = 1; i < table.length; i++) {
+    const cells = table[i];
+    if (!cells || !cells.length) continue;
+    const obj = {};
+    headers.forEach(function(h, c) { if (h) obj[h] = cells[c]; });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+/**
+ * Lay down the Events_Reference header row, brand styling, and a warning-only
+ * protection so a human is nudged not to hand-edit the mirror. Idempotent and
+ * data-safe: only the header row + formatting are (re)written here; refreshEvents
+ * owns the data rows. Script writes pass straight through warning-only
+ * protection, so refreshEvents is never blocked.
+ */
+function setupEventsReferenceSheet_(sheet) {
+  const spec = CONFIG.EVENTS_REF;
+  const n = spec.headers.length;
+
+  sheet.getRange(1, 1, 1, n).setValues([spec.headers]);
+  sheet.getRange(1, 1, 1, n)
+    .setBackground(CONFIG.COLORS.HEADER_BG)
+    .setFontColor(CONFIG.COLORS.HEADER_TEXT)
+    .setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidths(1, n, 160);
+  sheet.getRange(1, 1).setNote(
+    'READ-ONLY mirror of the public Events sheet. Managed by FTC ▸ Refresh Events. ' +
+    'Do not hand-edit — changes are overwritten on the next refresh.'
+  );
+
+  const existing = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
+  if (!existing.length) {
+    sheet.protect()
+      .setWarningOnly(true)
+      .setDescription('Read-only mirror of the public Events sheet — managed by FTC ▸ Refresh Events.');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3a — Link Partner to Event(s) (the many-to-many join)
+// ---------------------------------------------------------------------------
+
+/** Open the Link Partner to Event(s) dialog. */
+function openLinkPartnerDialog() {
+  const html = HtmlService.createHtmlOutputFromFile('LinkPartnerDialog')
+    .setWidth(560).setHeight(720);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Link Partner to Event(s)');
+}
+
+/** Open the View Links dialog. */
+function openViewLinksDialog() {
+  const html = HtmlService.createHtmlOutputFromFile('ViewLinksDialog')
+    .setWidth(560).setHeight(700);
+  SpreadsheetApp.getUi().showModalDialog(html, 'View Event ↔ Partner Links');
+}
+
+/**
+ * Data the link / view dialogs need to render their pickers: the partner list
+ * (by name) and the event list (labelled "City — Venue", value = EventID). Both
+ * are internal-only (this runs inside the gated sheet), but only public event
+ * fields are sent for events. Returns hasEvents=false when Events_Reference is
+ * empty so the dialog can prompt "Refresh Events first".
+ */
+function getLinkDialogData() {
+  const partners = readAllPartners_().map(function(p) {
+    return { id: p.PartnerID, name: p.organization_name, location: partnerLocation_(p) };
+  });
+  const events = readEventsReference_().map(function(e) {
+    return { id: e.EventID, label: eventLabel_(e), status: String(e.Status || '').trim(),
+             paused: String(e.Paused || '').trim().toLowerCase() === 'yes' };
+  });
+  return { partners: partners, events: events, hasEvents: events.length > 0 };
+}
+
+/**
+ * Upsert links between one partner and one or more events. For each EventID:
+ * if a (PartnerID, EventID) row already exists, UPDATE it (active +
+ * recurring_slot) and keep its LinkID; otherwise append a new row with a fresh
+ * LinkID. Many-to-many: a partner may link to many events here, and an event
+ * accumulates many partners across calls. Returns a per-event breakdown.
+ *
+ * payload = { partnerId, eventIds:[...], recurring_slot, active }
+ */
+function linkPartnerToEvents(payload) {
+  return withLock_(function() {
+    const data = payload || {};
+    const partnerId = String(data.partnerId || '').trim();
+    const eventIds = (data.eventIds || []).map(function(x) { return String(x || '').trim(); })
+      .filter(function(x) { return x; });
+    const recurringSlot = String(data.recurring_slot || '').trim();
+    const active = (data.active === true ||
+      ['true', 'yes', 'on', '1'].indexOf(String(data.active).trim().toLowerCase()) !== -1);
+
+    if (!partnerId) throw new Error('Pick a partner first.');
+    if (!eventIds.length) throw new Error('Select at least one event to link.');
+
+    // Validate the partner + events against the current data so we never link to
+    // an unknown/stale id.
+    const partner = readAllPartners_().filter(function(p) { return p.PartnerID === partnerId; })[0];
+    if (!partner) throw new Error('That partner no longer exists. Reopen the dialog and pick again.');
+
+    const eventsById = {};
+    readEventsReference_().forEach(function(e) { eventsById[e.EventID] = e; });
+
+    const spec = CONFIG.SHEETS.LINKS;
+    const sheet = getOrCreateSheet_(spec.name);
+    ensureLinkHeaders_(sheet);
+    const map = headerMap_(sheet);
+    const links = readAllLinks_(sheet, map);
+
+    // Index existing links by PartnerID|EventID for the upsert.
+    const index = {};
+    links.forEach(function(l) { index[l.PartnerID + '|' + l.EventID] = l; });
+
+    let created = 0, updated = 0, skipped = 0;
+    const details = [];
+    let nextRow = sheet.getLastRow() + 1;
+
+    eventIds.forEach(function(eventId) {
+      if (!eventsById[eventId]) {
+        skipped++;
+        details.push({ eventId: eventId, label: eventId, action: 'skipped (unknown event — Refresh Events)' });
+        return;
+      }
+      const label = eventLabel_(eventsById[eventId]);
+      const existing = index[partnerId + '|' + eventId];
+      if (existing) {
+        const row = {
+          LinkID: existing.LinkID || Utilities.getUuid(),
+          EventID: eventId,
+          PartnerID: partnerId,
+          active: active,
+          recurring_slot: recurringSlot,
+          last_capacity_confirmed: existing.last_capacity_confirmed || ''
+        };
+        writeLinkRow_(sheet, existing._row, row, map);
+        updated++;
+        details.push({ eventId: eventId, label: label, action: 'updated' });
+      } else {
+        const row = {
+          LinkID: Utilities.getUuid(),
+          EventID: eventId,
+          PartnerID: partnerId,
+          active: active,
+          recurring_slot: recurringSlot,
+          last_capacity_confirmed: ''
+        };
+        writeLinkRow_(sheet, nextRow, row, map);
+        index[partnerId + '|' + eventId] = { _row: nextRow }; // guard dup ids in same call
+        nextRow++;
+        created++;
+        details.push({ eventId: eventId, label: label, action: 'created' });
+      }
+    });
+
+    return {
+      partnerName: partner.organization_name,
+      created: created,
+      updated: updated,
+      skipped: skipped,
+      active: active,
+      details: details
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3a — View Links (both directions of the join)
+// ---------------------------------------------------------------------------
+
+/**
+ * List the events a partner is linked to. Joins EventPartnerLinks → the
+ * Events_Reference mirror for a friendly label/status. A link whose event isn't
+ * in the current mirror is still listed (flagged stale) so nothing silently
+ * disappears.
+ */
+function getLinksForPartner(partnerId) {
+  const id = String(partnerId || '').trim();
+  if (!id) return { partnerId: '', items: [] };
+
+  const partner = readAllPartners_().filter(function(p) { return p.PartnerID === id; })[0];
+  const eventsById = {};
+  readEventsReference_().forEach(function(e) { eventsById[e.EventID] = e; });
+
+  const items = readAllLinks_().filter(function(l) { return l.PartnerID === id; })
+    .map(function(l) {
+      const ev = eventsById[l.EventID];
+      return {
+        linkId: l.LinkID,
+        eventId: l.EventID,
+        label: ev ? eventLabel_(ev) : ('Unknown event (' + l.EventID + ')'),
+        status: ev ? String(ev.Status || '').trim() : '',
+        stale: !ev,
+        active: isTruthyFlag_(l.active),
+        recurring_slot: String(l.recurring_slot || '').trim(),
+        last_capacity_confirmed: String(l.last_capacity_confirmed || '').trim()
+      };
+    });
+  items.sort(linkLabelSort_);
+  return { partnerId: id, partnerName: partner ? partner.organization_name : '', items: items };
+}
+
+/**
+ * List the partners linked to an event. Joins EventPartnerLinks → Partners for
+ * the org name. Internal-only view (runs inside the gated sheet).
+ */
+function getLinksForEvent(eventId) {
+  const id = String(eventId || '').trim();
+  if (!id) return { eventId: '', items: [] };
+
+  const partnersById = {};
+  readAllPartners_().forEach(function(p) { partnersById[p.PartnerID] = p; });
+  const ev = readEventsReference_().filter(function(e) { return e.EventID === id; })[0];
+
+  const items = readAllLinks_().filter(function(l) { return l.EventID === id; })
+    .map(function(l) {
+      const p = partnersById[l.PartnerID];
+      return {
+        linkId: l.LinkID,
+        partnerId: l.PartnerID,
+        label: p ? p.organization_name : ('Unknown partner (' + l.PartnerID + ')'),
+        location: p ? partnerLocation_(p) : '',
+        stale: !p,
+        active: isTruthyFlag_(l.active),
+        recurring_slot: String(l.recurring_slot || '').trim(),
+        last_capacity_confirmed: String(l.last_capacity_confirmed || '').trim()
+      };
+    });
+  items.sort(linkLabelSort_);
+  return { eventId: id, eventLabel: ev ? eventLabel_(ev) : '', items: items };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3a — link / event read helpers
+// ---------------------------------------------------------------------------
+
+/** Sort link rows: active first, then by label. */
+function linkLabelSort_(a, b) {
+  if (a.active !== b.active) return a.active ? -1 : 1;
+  return String(a.label).toLowerCase() < String(b.label).toLowerCase() ? -1 : 1;
+}
+
+/** Coerce a stored flag (checkbox bool, or "true"/"yes" text) to a boolean. */
+function isTruthyFlag_(v) {
+  return v === true || ['true', 'yes', 'on', '1'].indexOf(String(v).trim().toLowerCase()) !== -1;
+}
+
+/** "City — Venue" label for an event (falls back gracefully if a part is blank). */
+function eventLabel_(e) {
+  const city = String(e.City || '').trim();
+  const state = String(e.State || '').trim();
+  const venue = String(e.Venue || '').trim();
+  const place = city + (state ? ', ' + state : '');
+  if (place && venue) return place + ' — ' + venue;
+  return place || venue || String(e.EventID || '').trim();
+}
+
+/** "City, ST" location string for a partner (dialog context line). */
+function partnerLocation_(p) {
+  const city = String(p.city || '').trim();
+  const state = String(p.state || '').trim();
+  return city + (state ? ', ' + state : '');
+}
+
+/** All partners as objects keyed by header, sorted by org name (id + name present). */
+function readAllPartners_() {
+  const spec = CONFIG.SHEETS.PARTNERS;
+  const sheet = getOrCreateSheet_(spec.name);
+  const rows = readAllRows_(sheet, spec.headers);
+  return rows.filter(function(r) {
+    return String(r.PartnerID || '').trim() && String(r.organization_name || '').trim();
+  }).sort(function(a, b) {
+    return String(a.organization_name).toLowerCase() < String(b.organization_name).toLowerCase() ? -1 : 1;
+  });
+}
+
+/** All events from the read-only mirror, sorted by label (only rows with an EventID). */
+function readEventsReference_() {
+  const spec = CONFIG.EVENTS_REF;
+  const ss = SpreadsheetApp.getActive();
+  const sheet = ss.getSheetByName(spec.name);
+  if (!sheet) return [];
+  const rows = readAllRows_(sheet, spec.headers);
+  return rows.filter(function(r) { return String(r.EventID || '').trim(); })
+    .sort(function(a, b) {
+      return eventLabel_(a).toLowerCase() < eventLabel_(b).toLowerCase() ? -1 : 1;
+    });
+}
+
+/**
+ * All link rows as objects keyed by header, each tagged with its 1-based sheet
+ * row in `_row`. Optionally pass a pre-read sheet + header map to avoid a
+ * re-read inside the upsert.
+ */
+function readAllLinks_(sheet, map) {
+  const spec = CONFIG.SHEETS.LINKS;
+  sheet = sheet || getOrCreateSheet_(spec.name);
+  map = map || headerMap_(sheet);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const lastCol = sheet.getLastColumn();
+  const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const out = [];
+  values.forEach(function(vals, i) {
+    const obj = { _row: i + 2 };
+    spec.headers.forEach(function(h) { obj[h] = map[h] ? vals[map[h] - 1] : ''; });
+    // Skip fully blank rows (e.g. trailing empties).
+    if (String(obj.LinkID || '').trim() || String(obj.EventID || '').trim() ||
+        String(obj.PartnerID || '').trim()) {
+      out.push(obj);
+    }
+  });
+  return out;
+}
+
+/** Generic: read every data row of a sheet into objects keyed by `headers`. */
+function readAllRows_(sheet, headers) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const map = headerMap_(sheet);
+  const lastCol = sheet.getLastColumn();
+  const values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  return values.map(function(vals) {
+    const obj = {};
+    headers.forEach(function(h) { obj[h] = map[h] ? vals[map[h] - 1] : ''; });
+    return obj;
+  });
+}
+
+/**
+ * Write a link object across an EventPartnerLinks row by header name, then
+ * re-apply the `active` checkbox to that row (so a freshly appended row past the
+ * pre-validated range still renders as a checkbox). Mirrors writePartnerRow_.
+ */
+function writeLinkRow_(sheet, row, obj, map) {
+  const spec = CONFIG.SHEETS.LINKS;
+  map = map || headerMap_(sheet);
+  const width = Math.max(sheet.getLastColumn(), spec.headers.length);
+  const range = sheet.getRange(row, 1, 1, width);
+  const rowVals = range.getValues()[0];
+  spec.headers.forEach(function(h) {
+    if (!map[h]) return;
+    const v = obj[h];
+    rowVals[map[h] - 1] = (v === undefined || v === null) ? '' : v;
+  });
+  range.setValues([rowVals]);
+  (spec.checkboxes || []).forEach(function(h) {
+    if (map[h]) sheet.getRange(row, map[h]).insertCheckboxes();
+  });
+}
+
+/**
+ * Ensure the EventPartnerLinks tab has its header row, laying down the full set
+ * if the row is blank or appending any missing spec header. Mirrors
+ * ensurePartnerHeaders_ so a link save never lands in a header-less sheet.
+ */
+function ensureLinkHeaders_(sheet) {
+  const spec = CONFIG.SHEETS.LINKS;
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+    .map(function(v) { return String(v || '').trim(); });
+
+  if (existing.every(function(h) { return !h; })) {
+    sheet.getRange(1, 1, 1, spec.headers.length).setValues([spec.headers]);
+    return;
+  }
+  spec.headers.forEach(function(h) {
+    if (existing.indexOf(h) === -1) {
+      const nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue(h);
+      existing.push(h);
+    }
+  });
 }
 
 /**

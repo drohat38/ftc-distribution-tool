@@ -9,9 +9,12 @@ Column-by-column schema for the FTC Distribution Tool. Adopts the HSDS
 `CONFIG.LINK_HEADERS`) MUST match the column names below, in this exact order.
 Change one, change the other.
 
-Two tabs live in the **Partners workbook** — a *separate* Google Sheets workbook
-(`FTC Distribution (Partners)`) from the public event-map Events sheet. That
-separation is the privacy wall.
+Two data tabs (`Partners`, `EventPartnerLinks`) live in the **Partners
+workbook** — a *separate* Google Sheets workbook (`FTC Distribution (Partners)`)
+from the public event-map Events sheet. That separation is the privacy wall. A
+third tab, `Events_Reference`, is a **read-only mirror** of the public Events
+sheet (Phase 3a; see Tab 3 below) used only as a join target — it holds no
+partner data.
 
 > **Privacy wall.** The `Partners` and `EventPartnerLinks` tabs are internal.
 > They are never written to a published CSV and never served on a public URL.
@@ -107,7 +110,42 @@ never as a single partner column on an event.
 | 5 | `recurring_slot` | text | | Per-link cadence (may differ from the partner's default). |
 | 6 | `last_capacity_confirmed` | date | | Set by the pre-event capacity check (PRD §7.3). |
 
-`(EventID, PartnerID)` should be unique among active links.
+`(EventID, PartnerID)` is unique: the **Link Partner to Event(s)** dialog
+(Phase 3a) *upserts* — if a row for a `PartnerID`+`EventID` pair already exists,
+it updates that row's `active` / `recurring_slot` instead of appending a
+duplicate.
+
+---
+
+## Tab 3 — `Events_Reference` (read-only mirror, Phase 3a)
+
+A local, **read-only mirror** of the public event-map Events sheet, populated by
+the **Refresh Events** menu action (`refreshEvents()` in `apps-script/Code.gs`).
+It exists only so partner links have something to join against inside this
+workbook. Every refresh fetches the public published Events CSV
+(`CONFIG.EVENTS_CSV_URL` — the same URL the public map reads), clears the data
+rows, and rewrites them (deduped by `EventID`; rows with no `EventID` skipped).
+
+> **Read-only, both directions.** We only ever *fetch* the already-public Events
+> CSV; we never write back to the event-map sheet. No partner data is ever
+> written here — every column is a public event field. The tab carries a
+> warning-only protection and a header note so it isn't hand-edited.
+
+| # | Column | Source (public Events CSV) | Notes |
+|---:|---|---|---|
+| 1 | `EventID` | `EventID` | Join key → `EventPartnerLinks.EventID`. |
+| 2 | `City` | `City` | Display. |
+| 3 | `State` | `State` | Display. |
+| 4 | `Venue` | `Venue` | Display ("City — Venue" label). |
+| 5 | `Address` | `Address` | For map pins / lines (Phase 3 map). |
+| 6 | `Status` | `Status` | e.g. "Live". |
+| 7 | `Paused` | `Paused` | `Yes`/`No`. |
+| 8 | `Latitude` | `Latitude` | Cached geocode (from the event map). |
+| 9 | `Longitude` | `Longitude` | Cached geocode. |
+
+Columns are a subset of the public Events CSV, named identically so the refresh
+maps straight across. Add a column here only if the private map needs another
+*public* event field — never a partner field.
 
 ---
 

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  :root{
+    --orange:#FF6500;--orange-lt:#FFF1E6;--orange-dk:#CC5000;
+    --navy:#003366;
+    --ink:#1A1A1A;--ink2:#3c4043;--gray:#6B7280;
+    --line:#E5E7EB;--line-soft:#F1F3F4;--bg:#FAFAF7;
+    --green:#059669;--red:#DC2626;--amber:#D97706;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);padding:18px 22px;font-size:13px;line-height:1.4}
+  h2{font-size:18px;font-weight:700;margin-bottom:4px;color:var(--navy)}
+  .sub{color:var(--gray);font-size:12px;line-height:1.45;margin-bottom:14px}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px}
+  .field{margin-bottom:0}
+  label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray);margin-bottom:4px}
+  select{width:100%;border:1.5px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);font:inherit;padding:9px 10px}
+  select:focus{outline:none;border-color:var(--orange)}
+
+  /* Mode toggle */
+  .toggle{display:flex;gap:0;border:1.5px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:14px}
+  .toggle button{flex:1;padding:9px 10px;background:#fff;border:0;font:inherit;font-weight:600;color:var(--gray);cursor:pointer}
+  .toggle button.on{background:var(--orange);color:#fff}
+
+  .count-line{font-size:11px;color:var(--navy);font-weight:600;margin:0 0 8px}
+  .list{list-style:none}
+  .item{border:1px solid var(--line);border-radius:9px;padding:10px 11px;margin-bottom:8px;background:#fff}
+  .item-top{display:flex;align-items:center;gap:8px}
+  .item-name{font-weight:700;color:var(--navy);font-size:13px;flex:1}
+  .item-loc{font-size:11px;color:var(--gray);margin-top:2px}
+  .item-meta{font-size:11px;color:var(--ink2);margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 14px}
+  .item-meta b{color:var(--ink)}
+  .badge{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:4px}
+  .badge.active{background:#D1FAE5;color:#065F46}
+  .badge.inactive{background:#F3F4F6;color:#6B7280}
+  .badge.stale{background:#FEE2E2;color:#991B1B}
+  .empty{padding:16px;text-align:center;color:var(--gray);font-size:12px;background:#fff;border:1px dashed var(--line);border-radius:9px}
+  .notice{padding:12px;border-radius:8px;background:var(--orange-lt);border:1.5px solid #FBCF9C;color:#8a3b00;font-size:12px;line-height:1.5}
+  .actions{display:flex;gap:8px;margin-top:4px}
+  button.btn{padding:10px 13px;background:#fff;border:1.5px solid var(--line);color:var(--ink);border-radius:8px;font:inherit;font-weight:500;cursor:pointer}
+</style>
+</head>
+<body>
+  <h2>View Event ↔ Partner Links</h2>
+  <div class="sub">See both directions of the join: a partner's linked events, or an event's linked partners. <b>Internal only.</b></div>
+
+  <div id="loading" class="notice">Loading…</div>
+
+  <div id="ui" style="display:none">
+    <div class="toggle">
+      <button type="button" id="modePartner" class="on" onclick="setMode('partner')">By partner</button>
+      <button type="button" id="modeEvent" onclick="setMode('event')">By event</button>
+    </div>
+
+    <div class="panel">
+      <div class="field">
+        <label id="pickLabel">Partner</label>
+        <select id="picker" onchange="loadLinks()"></select>
+      </div>
+    </div>
+
+    <div id="results"></div>
+
+    <div class="actions">
+      <button type="button" class="btn" onclick="closeDialog()">Done</button>
+    </div>
+  </div>
+
+<script>
+let DATA = { partners: [], events: [] };
+let MODE = 'partner';
+
+function canUseAppsScript(){
+  return typeof google !== 'undefined' && google.script && google.script.run;
+}
+
+function esc(v){
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+  });
+}
+
+function closeDialog(){
+  if (canUseAppsScript()) google.script.host.close();
+}
+
+function setMode(mode){
+  MODE = mode;
+  document.getElementById('modePartner').classList.toggle('on', mode === 'partner');
+  document.getElementById('modeEvent').classList.toggle('on', mode === 'event');
+  document.getElementById('pickLabel').textContent = mode === 'partner' ? 'Partner' : 'Event';
+  populatePicker();
+  document.getElementById('results').innerHTML = '';
+}
+
+function populatePicker(){
+  const picker = document.getElementById('picker');
+  picker.innerHTML = '';
+  const opts = MODE === 'partner' ? DATA.partners : DATA.events;
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = MODE === 'partner' ? 'Pick a partner…' : 'Pick an event…';
+  picker.appendChild(placeholder);
+  opts.forEach(function(o){
+    const opt = document.createElement('option');
+    opt.value = o.id;
+    opt.textContent = MODE === 'partner'
+      ? (o.name + (o.location ? ' (' + o.location + ')' : ''))
+      : o.label;
+    picker.appendChild(opt);
+  });
+  if (!opts.length){
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = MODE === 'partner' ? 'No partners yet' : 'No events — run Refresh Events';
+    picker.appendChild(none);
+  }
+}
+
+function loadLinks(){
+  const id = document.getElementById('picker').value;
+  const results = document.getElementById('results');
+  if (!id){ results.innerHTML = ''; return; }
+  results.innerHTML = '<div class="notice">Loading links…</div>';
+  const handler = MODE === 'partner' ? renderPartnerLinks : renderEventLinks;
+  const call = canUseAppsScript() ? google.script.run.withSuccessHandler(handler)
+    .withFailureHandler(function(err){
+      results.innerHTML = '<div class="empty">Could not load: ' + esc(err && err.message ? err.message : err) + '</div>';
+    }) : null;
+  if (!call) return;
+  if (MODE === 'partner') call.getLinksForPartner(id);
+  else call.getLinksForEvent(id);
+}
+
+function activeBadge(it){
+  return it.active ? '<span class="badge active">active</span>' : '<span class="badge inactive">inactive</span>';
+}
+
+function metaLine(it){
+  const bits = [];
+  if (it.recurring_slot) bits.push('<b>Slot:</b> ' + esc(it.recurring_slot));
+  if (it.last_capacity_confirmed) bits.push('<b>Capacity confirmed:</b> ' + esc(it.last_capacity_confirmed));
+  return bits.length ? '<div class="item-meta">' + bits.join('') + '</div>' : '';
+}
+
+function renderList(title, count, itemsHtml){
+  const results = document.getElementById('results');
+  results.innerHTML =
+    '<div class="count-line">' + esc(title) + ' — ' + count + ' link' + (count === 1 ? '' : 's') + '</div>' +
+    (count ? '<ul class="list">' + itemsHtml + '</ul>'
+           : '<div class="empty">No links yet. Use <b>Link Partner to Event(s)</b> to connect them.</div>');
+}
+
+function renderPartnerLinks(r){
+  const html = (r.items || []).map(function(it){
+    return '<li class="item"><div class="item-top">' +
+      '<span class="item-name">' + esc(it.label) + '</span>' +
+      activeBadge(it) +
+      (it.status ? ' <span class="badge inactive">' + esc(it.status) + '</span>' : '') +
+      (it.stale ? ' <span class="badge stale">not in current events</span>' : '') +
+      '</div>' + metaLine(it) + '</li>';
+  }).join('');
+  renderList(r.partnerName || 'Partner', (r.items || []).length, html);
+}
+
+function renderEventLinks(r){
+  const html = (r.items || []).map(function(it){
+    return '<li class="item"><div class="item-top">' +
+      '<span class="item-name">' + esc(it.label) + '</span>' +
+      activeBadge(it) +
+      (it.stale ? ' <span class="badge stale">partner missing</span>' : '') +
+      '</div>' +
+      (it.location ? '<div class="item-loc">' + esc(it.location) + '</div>' : '') +
+      metaLine(it) + '</li>';
+  }).join('');
+  renderList(r.eventLabel || 'Event', (r.items || []).length, html);
+}
+
+function init(data){
+  DATA = data;
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('ui').style.display = 'block';
+  populatePicker();
+}
+
+if (canUseAppsScript()){
+  google.script.run
+    .withSuccessHandler(init)
+    .withFailureHandler(function(err){
+      document.getElementById('loading').innerHTML =
+        '<b>Could not load.</b> ' + esc(err && err.message ? err.message : err);
+    })
+    .getLinkDialogData();
+} else {
+  document.getElementById('loading').innerHTML =
+    '<b>Preview outside Google Sheets.</b> Open this from the FTC menu → View Links.';
+}
+</script>
+</body>
+</html>
