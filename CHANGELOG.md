@@ -6,7 +6,22 @@ project will adopt [Semantic Versioning](https://semver.org/) once it ships.
 
 ## [Unreleased]
 
-### Added
+### Added — Phase 2a: data foundation
+- Created the **separate, private** `FTC Distribution (Partners)` Google Sheets
+  workbook with a bound Apps Script project via `clasp create --type sheets`
+  (distinct from the public event-map workbook — privacy wall).
+- `apps-script/Code.gs`: `FTC` menu (`Set up sheets`, `Add Partner` stub),
+  `setupSheets()` that builds the `Partners` and `EventPartnerLinks` tabs with
+  the exact `docs/DATA_MODEL.md` headers, brand-orange styled header row, and
+  dropdown validation (`pathway`, `cold_storage`, `partnership_status`); a
+  simple `onEdit` trigger that auto-fills `PartnerID` / `LinkID` UUIDs.
+- `apps-script/appsscript.json`: `America/Chicago`, scopes
+  `spreadsheets.currentonly` + `script.container.ui`.
+- Expanded `docs/DATA_MODEL.md` to exact columns + types for both tabs.
+- Cloned the event-map repo to `reference/feed-the-city-event-map/` as
+  read-only reference (gitignored, never modified).
+
+### Added — Phase 1: scaffold
 - Initial repository scaffold (Phase 1 of `PRD.md` §10):
   - `AGENTS.md` canonical agent context and `CLAUDE.md` (`@AGENTS.md`).
   - `apps-script/` clasp project stub — `appsscript.json` manifest, `Code.gs`

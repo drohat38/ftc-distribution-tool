@@ -3,7 +3,11 @@ node_modules/
 
 # clasp — local auth + project binding (never commit these)
 .clasprc.json
+.clasp.json
 apps-script/.clasp.json
+
+# Event-map repo — READ-ONLY reference clone (AGENTS.md: never modify, never commit)
+reference/feed-the-city-event-map/
 
 # OS / editor cruft
 .DS_Store

@@ -16,8 +16,12 @@ The two link by `EventID` (stable UUIDs already used by the event map — see
 
 ## Status
 
-🚧 **Scaffold only.** No features built yet. See the build phases in
-[`PRD.md`](PRD.md) §10.
+🚧 **Phase 2a — data foundation.** A separate, private `FTC Distribution
+(Partners)` Google Sheets workbook exists with a bound Apps Script project; the
+`FTC` menu sets up the `Partners` and `EventPartnerLinks` tabs (headers,
+dropdowns, auto-UUID). The Add Partner form, geocoding, the private map, and the
+capacity check are still to come. See the build phases in [`PRD.md`](PRD.md) §10
+and the schema in [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 
 ## Stack
 
@@ -66,19 +70,22 @@ After that, every `git commit` pushes automatically (per the
 
 ### 2. clasp (Apps Script)
 
+The bound project already exists (created in Phase 2a). `apps-script/.clasp.json`
+(which holds its `scriptId`) is gitignored, so a fresh clone needs to re-bind:
+
 ```sh
-npm install -g @google/clasp   # if not already installed
+npm install -g @google/clasp     # if not already installed
 clasp login
 cd apps-script
-cp .clasp.json.example .clasp.json
-# then either bind to a new sheet-bound project:
-#   clasp create --type sheets --title "FTC Distribution"
-# or clone the existing one and paste its scriptId into .clasp.json
-clasp push
+clasp clone <scriptId>           # get the scriptId from the project owner
+clasp push                       # deploy Code.gs + appsscript.json
 ```
 
+Then, in the sheet: **FTC → Set up sheets** to build the `Partners` and
+`EventPartnerLinks` tabs.
+
 `.clasp.json` and `.clasprc.json` are gitignored — they hold your project
-binding and credentials.
+binding and credentials. `apps-script/.clasp.json.example` shows the shape.
 
 ## Brand
 
