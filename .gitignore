@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# clasp — local auth + project binding (never commit these)
+.clasprc.json
+apps-script/.clasp.json
+
+# OS / editor cruft
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Env / secrets
+.env
+.env.*

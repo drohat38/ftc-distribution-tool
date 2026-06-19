@@ -1,0 +1,16 @@
+#!/bin/sh
+# Auto-push to origin/main after every commit.
+# See AGENTS.md "Git workflow": committing is enough; the hook pushes.
+#
+# Activate once per clone:  git config core.hooksPath .githooks
+#
+# Safe by design: skips silently if no 'origin' remote exists yet, and never
+# blocks a commit (the commit has already succeeded by the time this runs).
+
+if git remote get-url origin >/dev/null 2>&1; then
+  branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+  echo "[post-commit] pushing ${branch} -> origin"
+  git push origin HEAD || echo "[post-commit] push failed (commit is saved locally; push later)"
+else
+  echo "[post-commit] no 'origin' remote yet — skipping auto-push"
+fi
