@@ -53,7 +53,16 @@ re-geocoded on map load.
 | 20 | `assigned_chapter` | text | | FTC chapter that owns the relationship. |
 | 21 | `agreement_on_file` | bool | | `TRUE`/`FALSE` (checkbox added with the Add/Edit dialog in Phase 2b). Whether a signed agreement exists… |
 | 22 | `agreement_date` | date | | …and when it was signed. |
-| 23 | `last_verified` | date | | **The single most important field** (PRD §8). Surfaced on every record so users know what to trust; refreshed monthly by the named data owner. |
+| 23 | `last_verified` | date | | **The single most important field** (PRD §8). Surfaced on every record so users know what to trust; refreshed monthly by the named data owner. Set to "now" on add; refreshed on every Edit save. |
+| 24 | `FirstAdded` | date | | **System / immutable.** When the record was first created. Stamped once by the Add Partner dialog and never changed by Edit (mirrors the Events sheet's `FirstAdded`). Distinct from `last_verified`, which moves. |
+
+> **Reconciliation note (Phase 2b).** PRD §5 lists `last_verified` but no
+> creation timestamp. The Add/Edit workflow needs an *immutable* "when was this
+> first added" date that Edit never touches (so `last_verified` can move on every
+> refresh without losing the original add date) — exactly the `FirstAdded` /
+> `Last Updated` split the Events sheet already uses. Column 24 `FirstAdded` is
+> added for that. No columns 1–23 changed order; `Code.gs`
+> `CONFIG.SHEETS.PARTNERS.headers` appends `FirstAdded` to match.
 
 ### Dropdown values (data validation, reject-on-invalid)
 

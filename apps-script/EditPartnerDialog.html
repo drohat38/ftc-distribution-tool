@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  :root{
+    --orange:#FF6500;--orange-lt:#FFF1E6;--orange-dk:#CC5000;
+    --navy:#003366;
+    --ink:#1A1A1A;--ink2:#3c4043;--gray:#6B7280;
+    --line:#E5E7EB;--line-soft:#F1F3F4;--bg:#FAFAF7;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);padding:18px 22px;font-size:13px;line-height:1.4}
+  h2{font-size:18px;font-weight:700;margin-bottom:4px;color:var(--navy)}
+  .sub{color:var(--gray);font-size:12px;line-height:1.45;margin-bottom:12px}
+  .meta{display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:14px;padding:9px 12px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:11px;color:var(--ink2)}
+  .meta b{color:var(--navy);font-weight:700}
+  .meta .verified{color:var(--orange-dk);font-weight:700}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px}
+  .panel-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--orange);margin-bottom:10px}
+  .panel-title.internal{color:var(--navy)}
+  .panel-title .tag{float:right;font-size:9px;font-weight:700;color:#fff;background:var(--navy);border-radius:4px;padding:2px 6px;letter-spacing:.04em}
+  .field{margin-bottom:11px}
+  label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray);margin-bottom:4px}
+  .req{color:var(--orange)}
+  .opt{font-weight:500;text-transform:none;letter-spacing:0;color:#9CA3AF;font-size:9.5px}
+  .field-help{font-size:10px;color:var(--gray);margin-top:4px;line-height:1.35}
+  input,select,textarea{width:100%;border:1.5px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);font:inherit;padding:9px 10px}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--orange)}
+  textarea{min-height:52px;resize:vertical}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .row3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
+  .actions{display:flex;gap:8px;margin-top:4px}
+  button{font:inherit;cursor:pointer;border:0;border-radius:8px;font-weight:500}
+  .btn{padding:10px 13px;background:#fff;border:1.5px solid var(--line);color:var(--ink)}
+  .btn.primary{background:var(--orange);border-color:var(--orange);color:#fff;flex:1;font-weight:700}
+  .btn.primary:hover{background:var(--orange-dk);border-color:var(--orange-dk)}
+  .btn:disabled{opacity:.55;cursor:default}
+
+  .check-row{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1.5px solid var(--line);border-radius:8px;background:#fff}
+  .check-row input[type="checkbox"]{width:17px;height:17px;margin:0;cursor:pointer;accent-color:var(--orange)}
+  .check-row label{margin:0;text-transform:none;letter-spacing:0;font-size:12.5px;font-weight:500;color:var(--ink);cursor:pointer}
+
+  .gate{display:none;margin-top:10px;padding:10px 12px;border-radius:8px;font-size:11.5px;line-height:1.5;border:1.5px solid}
+  .gate.show{display:block}
+  .gate.ok{background:var(--orange-lt);border-color:#FBCF9C;color:#8a3b00}
+  .gate.block{background:#FEE2E2;border-color:#FECACA;color:#991B1B}
+  .gate b{display:block;margin-bottom:3px}
+
+  .result{display:none;margin-top:12px;padding:11px 12px;border-radius:8px;font-size:12px;line-height:1.5}
+  .result.show{display:block}
+  .result.good{background:#D1FAE5;color:#065F46}
+  .result.warn{background:#FEF3C7;color:#92400E}
+  .result.bad{background:#FEE2E2;color:#991B1B}
+  .pin-check{display:inline-block;margin-top:8px;font-size:11.5px;font-weight:600;color:var(--orange)}
+  .diff{margin-top:8px;padding:8px 10px;background:#F8FAFC;border-radius:6px;font-size:11.5px;line-height:1.5;color:var(--ink2)}
+  .diff-row{padding:2px 0}
+  .diff-label{font-weight:700;color:var(--ink)}
+  .diff-old{text-decoration:line-through;color:var(--gray)}
+  .diff-new{color:var(--orange-dk);font-weight:600}
+</style>
+</head>
+<body>
+  <h2>Edit Distribution Partner</h2>
+  <div class="sub">Editing row <?= rowNumber ?>. Saving refreshes <b>last_verified</b> and re-geocodes only if the address changed.</div>
+  <div class="meta" id="meta"></div>
+
+  <form id="form" onsubmit="savePartner(event)">
+    <!-- Organization -->
+    <div class="panel">
+      <div class="panel-title">Organization</div>
+      <div class="field"><label>Organization name <span class="req">*</span></label><input id="organization_name" required></div>
+      <div class="field"><label>What they do <span class="opt">— optional</span></label><textarea id="description"></textarea></div>
+      <div class="row2">
+        <div class="field"><label>Website <span class="opt">— optional</span></label><input id="website" type="url" placeholder="https://"></div>
+        <div class="field"><label>Service type <span class="opt">— optional</span></label><input id="service_name" placeholder="e.g. Food pantry"></div>
+      </div>
+    </div>
+
+    <!-- Location -->
+    <div class="panel">
+      <div class="panel-title">Location</div>
+      <div class="field">
+        <label>Street address <span class="req">*</span></label>
+        <input id="address" required placeholder="123 Main St">
+        <div class="field-help">Change this and the map pin is re-geocoded on save. Leave it and the cached pin stays.</div>
+      </div>
+      <div class="row3">
+        <div class="field"><label>City</label><input id="city"></div>
+        <div class="field"><label>State</label><input id="state" maxlength="2" style="text-transform:uppercase"></div>
+        <div class="field"><label>ZIP</label><input id="postal_code"></div>
+      </div>
+    </div>
+
+    <!-- Contact (privacy wall) -->
+    <div class="panel">
+      <div class="panel-title internal">Contact <span class="tag">INTERNAL</span></div>
+      <div class="field"><label>Contact name <span class="opt">— optional</span></label><input id="contact_name"></div>
+      <div class="row2">
+        <div class="field"><label>Phone <span class="opt">— optional</span></label><input id="contact_phone"></div>
+        <div class="field"><label>Email <span class="opt">— optional</span></label><input id="contact_email" type="email"></div>
+      </div>
+    </div>
+
+    <!-- Food safety -->
+    <div class="panel">
+      <div class="panel-title">Food safety</div>
+      <div class="row2">
+        <div class="field">
+          <label>Pathway <span class="req">*</span></label>
+          <select id="pathway" required onchange="evaluateGate()">
+            <option value="">Pick one</option>
+            <option value="same-day">same-day (serves immediately)</option>
+            <option value="hold-redistribute">hold-redistribute (refrigerates, distributes over the week)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Cold storage <span class="req">*</span></label>
+          <select id="cold_storage" required onchange="evaluateGate()">
+            <option value="">Pick one</option>
+            <option value="yes">yes</option>
+            <option value="no">no</option>
+          </select>
+        </div>
+      </div>
+      <div class="gate" id="gate"></div>
+    </div>
+
+    <!-- Partnership -->
+    <div class="panel">
+      <div class="panel-title">Partnership</div>
+      <div class="row2">
+        <div class="field"><label>Monthly capacity (meals) <span class="opt">— optional</span></label><input id="monthly_capacity_meals" type="number" min="0"></div>
+        <div class="field"><label>Recurring slot <span class="opt">— optional</span></label><input id="recurring_slot" placeholder="e.g. 2nd Saturday"></div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Status</label>
+          <select id="partnership_status">
+            <option value="candidate">candidate</option>
+            <option value="active">active</option>
+            <option value="paused">paused</option>
+          </select>
+        </div>
+        <div class="field"><label>Assigned chapter <span class="opt">— optional</span></label><input id="assigned_chapter"></div>
+      </div>
+      <div class="row2">
+        <div class="field" style="display:flex;align-items:flex-end">
+          <div class="check-row" style="width:100%">
+            <input type="checkbox" id="agreement_on_file">
+            <label for="agreement_on_file">Signed agreement on file</label>
+          </div>
+        </div>
+        <div class="field"><label>Agreement date <span class="opt">— optional</span></label><input id="agreement_date" type="date"></div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn" onclick="closeDialog()">Cancel</button>
+      <button type="submit" class="btn primary" id="saveButton">Save Changes</button>
+    </div>
+    <div class="result" id="result"></div>
+  </form>
+
+<script>
+const ROW = Number('<?= rowNumber ?>');
+const FIELDS = ['organization_name','description','website','address','city','state',
+  'postal_code','service_name','contact_name','contact_phone','contact_email',
+  'pathway','cold_storage','monthly_capacity_meals','recurring_slot',
+  'partnership_status','assigned_chapter','agreement_on_file','agreement_date'];
+const LABELS = {
+  organization_name:'Organization', description:'Description', website:'Website',
+  address:'Address', city:'City', state:'State', postal_code:'ZIP',
+  service_name:'Service', contact_name:'Contact', contact_phone:'Phone',
+  contact_email:'Email', pathway:'Pathway', cold_storage:'Cold storage',
+  monthly_capacity_meals:'Monthly capacity', recurring_slot:'Recurring slot',
+  partnership_status:'Status', assigned_chapter:'Chapter',
+  agreement_on_file:'Agreement on file', agreement_date:'Agreement date'
+};
+const ADDRESS_FIELDS = ['address','city','state','postal_code'];
+let originalValues = {};
+
+function canUseAppsScript(){
+  return typeof google !== 'undefined' && google.script && google.script.run;
+}
+function esc(v){
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+  });
+}
+function show(kind, msg){
+  const el = document.getElementById('result');
+  el.className = 'result show ' + kind;
+  el.innerHTML = msg;
+}
+function closeDialog(){
+  if (canUseAppsScript()) google.script.host.close();
+  else show('warn', 'This preview is open outside Google Sheets.');
+}
+
+// Coerce any stored date value into the YYYY-MM-DD an <input type="date"> needs.
+function toDateInput(v){
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return '';
+  const m = ('0' + (d.getMonth() + 1)).slice(-2);
+  const day = ('0' + d.getDate()).slice(-2);
+  return d.getFullYear() + '-' + m + '-' + day;
+}
+function isTrue(v){
+  return v === true || ['true','yes','on','1'].indexOf(String(v).trim().toLowerCase()) !== -1;
+}
+
+function collect(){
+  const d = {};
+  FIELDS.forEach(function(id){
+    const el = document.getElementById(id);
+    if (!el) { d[id] = ''; return; }
+    if (el.type === 'checkbox') { d[id] = el.checked; return; }
+    d[id] = (el.value || '').trim();
+  });
+  d.state = (d.state || '').toUpperCase();
+  return d;
+}
+
+function fill(data){
+  FIELDS.forEach(function(id){
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = data[id];
+    if (el.type === 'checkbox') { el.checked = isTrue(v); return; }
+    if (id === 'agreement_date') { el.value = toDateInput(v); return; }
+    el.value = (v == null) ? '' : v;
+  });
+  renderMeta(data);
+  originalValues = collect();
+  evaluateGate();
+}
+
+function renderMeta(data){
+  const pid = String(data.PartnerID || '').trim();
+  const shortId = pid ? pid.slice(0, 8) + '…' : '(none)';
+  const verified = String(data.last_verified || '').trim();
+  const added = String(data.FirstAdded || '').trim();
+  const bits = ['<span>PartnerID <b title="' + esc(pid) + '">' + esc(shortId) + '</b></span>'];
+  bits.push('<span>Last verified <span class="verified">' + esc(verified || '—') + '</span></span>');
+  if (added) bits.push('<span>First added <b>' + esc(added) + '</b></span>');
+  document.getElementById('meta').innerHTML = bits.join('');
+}
+
+// Same food-safety gate as the Add dialog.
+function evaluateGate(){
+  const pathway = document.getElementById('pathway').value;
+  const cold = document.getElementById('cold_storage').value;
+  const gate = document.getElementById('gate');
+  const save = document.getElementById('saveButton');
+  if (pathway !== 'hold-redistribute') {
+    gate.className = 'gate'; gate.innerHTML = ''; save.disabled = false; return true;
+  }
+  if (cold === 'yes') {
+    gate.className = 'gate show ok';
+    gate.innerHTML = '<b>Hold-and-redistribute — cold chain required.</b>' +
+      'Food must be ≤41°F at donation and labeled (name, source, date of preparation). ' +
+      'Cold storage is confirmed.';
+    save.disabled = false; return true;
+  }
+  gate.className = 'gate show block';
+  gate.innerHTML = '<b>Cold storage is required for this pathway.</b>' +
+    'Hold-and-redistribute is only legal with cold storage (TFER §228.64). Set <b>Cold storage</b> ' +
+    'to <b>yes</b>, or switch the pathway to <b>same-day</b>.';
+  save.disabled = true; return false;
+}
+
+function buildDiff(before, after){
+  const changes = [];
+  FIELDS.forEach(function(key){
+    const oldV = String(before && before[key] != null ? before[key] : '');
+    const newV = String(after && after[key] != null ? after[key] : '');
+    if (oldV !== newV) changes.push({ key: key, old: oldV, neu: newV });
+  });
+  return changes;
+}
+function renderDiff(changes){
+  if (!changes.length) return '';
+  const rows = changes.map(function(c){
+    return '<div class="diff-row"><span class="diff-label">' + esc(LABELS[c.key] || c.key) + ':</span> ' +
+      (c.old ? '<span class="diff-old">' + esc(c.old) + '</span> → ' : '') +
+      '<span class="diff-new">' + esc(c.neu || '(empty)') + '</span></div>';
+  }).join('');
+  return '<div class="diff"><b>Changes:</b>' + rows + '</div>';
+}
+function addressChanged(changes){
+  return changes.some(function(c){ return ADDRESS_FIELDS.indexOf(c.key) !== -1; });
+}
+
+function savePartner(evt){
+  if (evt) evt.preventDefault();
+  const form = document.getElementById('form');
+  if (!form.checkValidity()) {
+    form.reportValidity();
+    show('warn', 'Fill in the required fields (marked *), then click Save Changes again.');
+    return;
+  }
+  if (!evaluateGate()) { show('bad', 'Resolve the cold-storage requirement above before saving.'); return; }
+  if (!canUseAppsScript()) { show('bad', 'This form only works inside the Google Sheet.'); return; }
+
+  const submitted = collect();
+  const changes = buildDiff(originalValues, submitted);
+  const btn = document.getElementById('saveButton');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  google.script.run
+    .withSuccessHandler(function(r){
+      const diffHtml = renderDiff(changes);
+      const geoNote = r.reGeocoded
+        ? (r.geocoded ? '<br>Address changed — pin re-geocoded.' : '<br><b>Address changed but geocoding failed:</b> ' + esc(r.geoMessage || ''))
+        : '';
+      const pin = (r.geocoded && r.lat && r.lng)
+        ? '<br><a class="pin-check" target="_blank" rel="noopener" href="https://www.google.com/maps?q=' + encodeURIComponent(r.lat + ',' + r.lng) + '">📍 Check this pin on Google Maps</a>'
+        : '';
+      const headline = changes.length
+        ? '<b>Saved.</b> last_verified refreshed.'
+        : '<b>Saved.</b> No fields changed — last_verified still refreshed.';
+      show(r.reGeocoded && !r.geocoded ? 'warn' : 'good', headline + geoNote + pin + diffHtml);
+      originalValues = submitted;
+      btn.disabled = false; btn.textContent = 'Save Changes';
+      // Refresh the meta bar's last_verified hint without a reload.
+      if (canUseAppsScript()) {
+        google.script.run.withSuccessHandler(function(res){ renderMeta(res.data); }).getPartnerForEdit(ROW);
+      }
+    })
+    .withFailureHandler(function(e){
+      show('bad', 'Save failed: ' + esc(e && e.message ? e.message : e));
+      btn.disabled = false; btn.textContent = 'Save Changes';
+    })
+    .updatePartner(ROW, submitted);
+}
+
+if (canUseAppsScript()) {
+  google.script.run
+    .withSuccessHandler(function(r){ fill(r.data); })
+    .withFailureHandler(function(e){ show('bad', 'Load failed: ' + esc(e && e.message ? e.message : e) + '. Close and try again.'); })
+    .getPartnerForEdit(ROW);
+} else {
+  show('warn', 'This form only works inside the Google Sheet. Open it from the FTC menu → Edit Partner.');
+}
+</script>
+</body>
+</html>
