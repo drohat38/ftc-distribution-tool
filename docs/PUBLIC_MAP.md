@@ -65,17 +65,17 @@ last `<script>` of `src/index.html`). This is exactly how the event map runs. A 
 browser, so its real protection is the **referrer restriction** below, not secrecy.
 A private repo just keeps it (and the internal docs) off public GitHub.
 
-> **Why not an env-var / build-time injection?** The site is deployed as a
-> Cloudflare **Worker** (a `*.workers.dev` URL) that serves `src/index.html`
-> **as-is** — there's no build step to substitute a placeholder. So the committed
-> key is the simple, reliable approach. (`?k=YOUR_KEY` in the URL still overrides
-> `FALLBACK_KEY` for local testing.)
+> **Why not an env-var / build-time injection?** The site is a Cloudflare **Pages**
+> project that serves `src/index.html` **as-is** (no build command). There's no
+> build step to substitute a placeholder, so the committed key is the simple,
+> reliable approach. (`?k=YOUR_KEY` in the URL still overrides `FALLBACK_KEY` for
+> local testing.)
 
 **Referrer step (required):** in Google Cloud Console → the key → **Website
-restrictions**, allow this site's URL (note: it's a **`workers.dev`** URL):
+restrictions**, allow this site's URL (note: it's a **`pages.dev`** URL):
 
 ```
-https://ftc-distribution-tool.deven-rohatgi.workers.dev/*
+https://ftc-distribution-tool.pages.dev/*
 http://localhost:*        (local testing)
 http://127.0.0.1:*        (local testing)
 ```
@@ -90,7 +90,7 @@ ceiling.
 
 The site is deployed as a Cloudflare project connected to this **private** GitHub
 repo, serving `src/index.html`. Current live URL:
-**`https://ftc-distribution-tool.deven-rohatgi.workers.dev/`**.
+**`https://ftc-distribution-tool.pages.dev/`**.
 
 - **Production branch:** `main`. **Framework preset:** None. **Build command:**
   (blank — the file is served as-is). **Output / assets directory:** `src` — so only
@@ -100,7 +100,7 @@ repo, serving `src/index.html`. Current live URL:
 - The repo is private, so Cloudflare needs read access to it via the Cloudflare
   GitHub app (granted when you connected the repo). No public access required.
 
-After it's live, make sure that `workers.dev` URL is in the Maps key's referrers
+After it's live, make sure that `pages.dev` URL is in the Maps key's referrers
 (see the Maps key section).
 
 ---
@@ -122,5 +122,5 @@ After it's live, make sure that `workers.dev` URL is in the Maps key's referrers
 - [ ] Pasted the CSV URLs into `CONFIG` in `src/index.html`
 - [ ] Repo is **private**; key committed in `FALLBACK_KEY`
 - [ ] Cloudflare project serves `src/` from this private repo (output dir `src`)
-- [ ] Added `https://ftc-distribution-tool.deven-rohatgi.workers.dev/*` to the Maps key's referrers
+- [ ] Added `https://ftc-distribution-tool.pages.dev/*` to the Maps key's referrers
 - [ ] Confirmed the live map renders without `?k=`
