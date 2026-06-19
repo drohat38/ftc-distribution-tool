@@ -59,13 +59,30 @@ CSV (same event data), so you can leave it as-is and skip publishing
 The map needs a Google **Maps JavaScript API** key. Reuse the event map's existing
 referrer-restricted key — no new key, no new billing relationship.
 
-Two ways to supply it (same pattern as the event map):
+**The repo is public, so the key is NOT committed.** `src/index.html` ships with a
+`__MAPS_KEY__` placeholder; Cloudflare replaces it at deploy time from an
+environment variable. The real key lives only in Cloudflare's settings, never in
+git. (A Maps **JavaScript** key is a client-side key anyway — it's visible in every
+visitor's browser, so its real protection is the referrer restriction below, not
+secrecy. Keeping it out of git just avoids key-harvesting bots / GitHub scanners.)
 
-1. **`?k=` URL param** (quick test / embed): open
-   `https://<your-project>.pages.dev/?k=YOUR_KEY`.
-2. **`FALLBACK_KEY`** (production default): paste the key into `FALLBACK_KEY` in
-   the last `<script>` of `src/index.html`. It ships **blank on purpose** so no key
-   is committed; paste the event map's key there before deploying.
+**Set it up (one time):**
+
+1. In the Cloudflare Pages project → **Settings ▸ Environment variables** → add, for
+   **Production** (and **Preview** if you want preview builds to work):
+   ```
+   MAPS_KEY = <the event map's existing Maps JS key>
+   ```
+2. In the same project → **Settings ▸ Builds & deployments**, set the **Build
+   command** (see the Deploy section below):
+   ```
+   sed -i "s|__MAPS_KEY__|$MAPS_KEY|g" src/index.html
+   ```
+   On every deploy Cloudflare runs this, baking the key into the served file. Git
+   only ever has `__MAPS_KEY__`.
+
+**Local testing:** the token isn't substituted locally, so open the file with
+`?k=YOUR_KEY` appended (e.g. `http://127.0.0.1:8765/src/index.html?k=AIza…`).
 
 **Referrer step (required):** in Google Cloud Console, add this project's
 Cloudflare URL to the key's allowed referrers:
@@ -88,15 +105,22 @@ deploy independently.
 
 1. cloudflare.com → **Workers & Pages → Create → Pages → Connect to Git** →
    authorize → select the `ftc-distribution-tool` repo.
-2. **Production branch:** `main`. **Framework preset:** None. **Build command:**
-   (blank). **Build output directory:** `src` — serving only `src/` keeps the rest
-   of the repo (apps-script, docs, PRD, reference…) off the public URL.
-3. You get a URL like **`https://ftc-distribution-map.pages.dev/`** (the exact
+2. **Production branch:** `main`. **Framework preset:** None.
+   **Build command:** `sed -i "s|__MAPS_KEY__|$MAPS_KEY|g" src/index.html`
+   (injects the Maps key from the `MAPS_KEY` env var — see the Maps key section).
+   **Build output directory:** `src` — serving only `src/` keeps the rest of the
+   repo (apps-script, docs, PRD…) off the deployed site.
+3. Add the **`MAPS_KEY`** environment variable (Settings ▸ Environment variables,
+   Production) = the event map's existing Maps JS key.
+4. You get a URL like **`https://ftc-distribution-map.pages.dev/`** (the exact
    subdomain depends on the project name you choose). The map is served at the
    root. `git push` to `main` auto-deploys (~60s).
-4. **Verify privacy:** visiting `…/AGENTS.md` or `…/PRD.md` should return the *map*
-   (Cloudflare's fallback for unknown paths), NOT the file — confirming only `src/`
-   is public.
+
+> **Note:** because the GitHub repo is now public, anyone can read the repo on
+> GitHub (PRD, AGENTS, apps-script). The output-dir trick only limits what the
+> *Cloudflare site* serves, not what GitHub shows. No partner data is in the repo
+> (it lives in Google Sheets), but if you'd rather hide the internal docs, set the
+> repo back to private — Cloudflare Pages works with private repos too.
 
 After it's live, add that `.pages.dev` URL to the Maps key's referrers (above).
 
@@ -117,7 +141,8 @@ After it's live, add that `.pages.dev` URL to the Maps key's referrers (above).
 - [ ] Ran **Rebuild public view**
 - [ ] Published `Partners_Public`, `Links_Public` (and `Events_Reference` if used) to web as CSV
 - [ ] Pasted the CSV URLs into `CONFIG` in `src/index.html`
-- [ ] Pasted the event map's Maps key into `FALLBACK_KEY` (or used `?k=`)
 - [ ] Created a separate Cloudflare Pages project (output dir `src`)
+- [ ] Set build command `sed -i "s|__MAPS_KEY__|$MAPS_KEY|g" src/index.html`
+- [ ] Added `MAPS_KEY` env var (= event map's key) in Cloudflare → Settings
 - [ ] Added `https://<project>.pages.dev/*` to the Maps key's referrers
-- [ ] Verified `…/PRD.md` falls back to the map (privacy check)
+- [ ] Confirmed the live map renders (key injected) — local test via `?k=`

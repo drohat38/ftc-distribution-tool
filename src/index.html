@@ -676,18 +676,22 @@
 
   <script>
     // Google Maps API key bootstrap — SAME pattern as the event map.
-    //  - PRODUCTION / quick test: pass the key in the URL as ?k=YOUR_KEY (overrides FALLBACK_KEY).
-    //  - FALLBACK_KEY: paste the event map's EXISTING Maps JS key here. (Left blank on
-    //    purpose — no new key is generated or hardcoded. Reuse the referrer-restricted
-    //    event-map key and add this project's Cloudflare URL to its allowed referrers:
-    //    https://<this-pages-project>.pages.dev/*  plus localhost/127.0.0.1 for local testing.)
-    // Needs Maps JavaScript API enabled on the key. (No Geocoding needed here — all
-    // coordinates are pre-cached in the sheet.)
+    //  - The repo is PUBLIC, so the key is NOT committed. The "__MAPS_KEY__" token
+    //    below is replaced at DEPLOY time by Cloudflare Pages from the MAPS_KEY
+    //    environment variable, via the build command:
+    //        sed -i "s|__MAPS_KEY__|$MAPS_KEY|g" src/index.html
+    //    So the real key lives only in Cloudflare's env vars, never in git.
+    //  - Local testing / quick check: pass ?k=YOUR_KEY in the URL (overrides the token).
+    //  - Reuse the event map's existing referrer-restricted key; add this project's
+    //    Cloudflare URL to its allowed referrers (https://<this-project>.pages.dev/*
+    //    plus localhost/127.0.0.1). Needs Maps JavaScript API enabled. (No Geocoding
+    //    at runtime — coordinates are pre-cached in the sheet.)
     (function () {
-      var FALLBACK_KEY = "";   // <-- paste the event map's Maps JS key (do not commit a new one)
+      var FALLBACK_KEY = "__MAPS_KEY__";   // replaced at deploy by Cloudflare ($MAPS_KEY); never edit to a real key in git
       var key = new URLSearchParams(window.location.search).get("k") || FALLBACK_KEY;
-      if (!key) {
-        // No key at all: show the same setup message instead of a silent blank map.
+      if (!key || key === "__MAPS_KEY__") {
+        // No key supplied (token not substituted, or no ?k=): show the setup message
+        // instead of a silent blank map or a confusing auth error.
         window.gm_authFailure && setTimeout(window.gm_authFailure, 0);
         return;
       }
