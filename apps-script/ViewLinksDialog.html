@@ -37,6 +37,7 @@
   .badge.active{background:#D1FAE5;color:#065F46}
   .badge.inactive{background:#F3F4F6;color:#6B7280}
   .badge.stale{background:#FEE2E2;color:#991B1B}
+  .badge.primary{background:#FFE7D1;color:#8a3d00}
   .empty{padding:16px;text-align:center;color:var(--gray);font-size:12px;background:#fff;border:1px dashed var(--line);border-radius:9px}
   .notice{padding:12px;border-radius:8px;background:var(--orange-lt);border:1.5px solid #FBCF9C;color:#8a3b00;font-size:12px;line-height:1.5}
   .actions{display:flex;gap:8px;margin-top:4px}
@@ -136,7 +137,8 @@ function loadLinks(){
 }
 
 function activeBadge(it){
-  return it.active ? '<span class="badge active">active</span>' : '<span class="badge inactive">inactive</span>';
+  return (it.active ? '<span class="badge active">active</span>' : '<span class="badge inactive">inactive</span>') +
+    (it.is_primary ? ' <span class="badge primary">primary</span>' : '');
 }
 
 function metaLine(it){

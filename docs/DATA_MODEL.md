@@ -120,6 +120,7 @@ never as a single partner column on an event.
 | 4 | `active` | bool | ✅ | `TRUE`/`FALSE` (checkbox added with the link dialog in Phase 3). Whether this event↔partner link is currently live. |
 | 5 | `recurring_slot` | text | | Per-link cadence (may differ from the partner's default). |
 | 6 | `last_capacity_confirmed` | date | | Set by the pre-event capacity check (PRD §7.3). |
+| 7 | `is_primary` | bool | | **Section 1.** `TRUE`/`FALSE` (checkbox). Exactly **one** link per `EventID` is the primary (Nick's first/default partner); the rest are backups. The **Link Partner to Event(s)** dialog marks one link primary and **demotes** any other primary on that event, so the one-primary-per-event invariant always holds. The leader reminder (Section 2) reminds the leader about this partner. |
 
 `(EventID, PartnerID)` is unique: the **Link Partner to Event(s)** dialog
 (Phase 3a) *upserts* — if a row for a `PartnerID`+`EventID` pair already exists,
@@ -149,14 +150,19 @@ rows, and rewrites them (deduped by `EventID`; rows with no `EventID` skipped).
 | 3 | `State` | `State` | Display. |
 | 4 | `Venue` | `Venue` | Display ("City — Venue" label). |
 | 5 | `Address` | `Address` | For map pins / lines (Phase 3 map). |
-| 6 | `Status` | `Status` | e.g. "Live". |
-| 7 | `Paused` | `Paused` | `Yes`/`No`. |
-| 8 | `Latitude` | `Latitude` | Cached geocode (from the event map). |
-| 9 | `Longitude` | `Longitude` | Cached geocode. |
+| 6 | `Saturday` | `Saturday` | **Section 1.** Which Saturday of the month (`First`/`Second`/`Third`/`Fourth`/`Fifth`/`Last`). Drives the **next-occurrence date** in the leader reminder (Section 2). |
+| 7 | `Time` | `Time` | **Section 1.** e.g. "8:30 AM - 10:30 AM". Shown in the reminder email. |
+| 8 | `Leader` | `Leader` | **Section 1.** Chapter-leader first name. Matched to the `Leaders` tab to resolve who to remind. |
+| 9 | `Status` | `Status` | e.g. "Live". |
+| 10 | `Paused` | `Paused` | `Yes`/`No`. |
+| 11 | `Latitude` | `Latitude` | Cached geocode (from the event map). |
+| 12 | `Longitude` | `Longitude` | Cached geocode. |
 
 Columns are a subset of the public Events CSV, named identically so the refresh
 maps straight across. Add a column here only if the private map needs another
-*public* event field — never a partner field.
+*public* event field — never a partner field. (`Saturday` / `Time` / `Leader` are
+public event fields the event map already publishes — adding them keeps the
+privacy wall intact.)
 
 ---
 
@@ -240,6 +246,31 @@ data in the public view. Built by `Set up sheets`; `CheckID` auto-fills via the
 > linked to the event (by lat/long; by capacity if the event has no coordinates),
 > with each one's pathway, capacity, and contact. It is never gated on a computed
 > shortfall.
+
+---
+
+## Tab 7 — `Leaders` (Section 1)
+
+Chapter leaders. One row per leader. The leader reminder workflow (Section 2)
+matches an event's `Leader` first-name (from `Events_Reference`) to a row here to
+decide **who** to remind and at **what email**. Built by `Set up sheets`. **No id
+column / no auto-UUID** — `leader_email` is the natural key, and `onEdit` leaves
+this tab alone. Internal-only; never published.
+
+| # | Column | Type | Req | Validation / notes |
+|---:|---|---|:--:|---|
+| 1 | `leader_name` | text | ✅ | Full name. The reminder resolver matches on the **first name** (so `Leaders.leader_name = "Blaine Carter"` matches an event whose `Leader = "Blaine"`). |
+| 2 | `leader_email` | text | ✅ | Where the weekly reminder is sent. A matched leader with no email is **flagged**, not emailed. |
+| 3 | `chapter` | text | | Which FTC chapter they lead (display). |
+| 4 | `active` | bool | | `TRUE`/`FALSE` (checkbox). An active match is preferred when two leaders share a first name. |
+| 5 | `notes` | text | | Free text. |
+
+> **Resolver flags (Section 1).** `resolveEventLeader_` returns a `flag` string the
+> reminder workflow surfaces (it never silently drops an event) when: the event has
+> no `Leader`, no `Leaders` row matches, the matched row has no email, the match is
+> inactive, or two leaders share the first name. An event whose leader can't be
+> emailed (or that has no primary partner) is reported in the run summary and **not**
+> deduped, so it retries on the next run once fixed.
 
 ---
 

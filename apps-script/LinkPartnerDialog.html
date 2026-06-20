@@ -109,6 +109,11 @@
         <input type="checkbox" id="active" checked>
         <label for="active">Link is active</label>
       </div>
+      <div class="check-row" style="margin-top:8px">
+        <input type="checkbox" id="is_primary">
+        <label for="is_primary">Primary (default) partner for the selected event(s)</label>
+      </div>
+      <div class="field-help">Each event has exactly <b>one</b> primary — Nick's first/default partner; the rest are backups. Marking this primary demotes any other partner currently primary for those events.</div>
     </div>
 
     <div class="actions">
@@ -248,7 +253,8 @@ function saveLink(evt){
       partnerId: partnerId,
       eventIds: eventIds,
       recurring_slot: document.getElementById('recurring_slot').value.trim(),
-      active: document.getElementById('active').checked
+      active: document.getElementById('active').checked,
+      is_primary: document.getElementById('is_primary').checked
     });
 }
 
@@ -264,7 +270,11 @@ function handleResult(r){
   const kind = r.skipped ? 'warn' : 'good';
 
   let html = '<b>' + esc(r.partnerName) + '</b> — ' + (parts.join(', ') || 'no changes') +
-    ' (link ' + (r.active ? 'active' : 'inactive') + ').';
+    ' (link ' + (r.active ? 'active' : 'inactive') + (r.isPrimary ? ', primary' : '') + ').';
+  if (r.isPrimary && r.demoted){
+    html += '<br><span style="font-size:11px">Demoted ' + r.demoted + ' other primary ' +
+      (r.demoted === 1 ? 'partner' : 'partners') + ' so each event has one primary.</span>';
+  }
   if (r.details && r.details.length){
     html += '<ul>' + r.details.map(function(d){
       return '<li>' + esc(d.label) + ' — ' + esc(d.action) + '</li>';
@@ -272,8 +282,10 @@ function handleResult(r){
   }
   show(kind, html);
 
-  // Clear the event selection for the next batch; keep the partner chosen.
+  // Clear the event selection + the primary flag for the next batch; keep the
+  // partner chosen. (Primary is per-event, so it shouldn't carry to a new batch.)
   eventBoxes().forEach(function(b){ b.checked = false; });
+  document.getElementById('is_primary').checked = false;
   updateCount();
 }
 

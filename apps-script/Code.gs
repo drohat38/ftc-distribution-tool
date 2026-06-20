@@ -72,8 +72,15 @@ const CONFIG = {
   EVENTS_REF: {
     name: 'Events_Reference',
     idColumn: 'EventID',
+    // `Saturday` (which Saturday of the month) and `Leader` (chapter-leader first
+    // name) were added in Section 1: `Saturday` drives the next-occurrence date in
+    // the leader reminder workflow, and `Leader` is matched to the Leaders tab to
+    // resolve who to remind. `Time` is mirrored for the reminder email. All three
+    // are already-PUBLIC event fields (the event map publishes them) — no partner
+    // data, so the privacy wall is unaffected.
     headers: [
       'EventID', 'City', 'State', 'Venue', 'Address',
+      'Saturday', 'Time', 'Leader',
       'Status', 'Paused', 'Latitude', 'Longitude'
     ]
   },
@@ -129,14 +136,30 @@ const CONFIG = {
     LINKS: {
       name: 'EventPartnerLinks',
       idColumn: 'LinkID',
+      // `is_primary` (Section 1): exactly ONE link per EventID is the primary
+      // (Nick's first/default partner); the rest are backups. The Link dialog
+      // marks one link per event as primary and demotes the others so the
+      // one-primary-per-event invariant holds.
       headers: [
         'LinkID', 'EventID', 'PartnerID', 'active',
-        'recurring_slot', 'last_capacity_confirmed'
+        'recurring_slot', 'last_capacity_confirmed', 'is_primary'
       ],
       required: ['LinkID', 'EventID', 'PartnerID', 'active'],
       dropdowns: {},
-      // `active` is a checkbox, switched on with the link dialog in Phase 3a
-      // (DATA_MODEL.md Tab 2). The Link dialog upsert writes a real boolean here.
+      // `active` + `is_primary` are checkboxes, written as real booleans by the
+      // link dialog upsert (DATA_MODEL.md Tab 2).
+      checkboxes: ['active', 'is_primary']
+    },
+
+    // Section 1 — chapter leaders. One row per leader; the reminder workflow
+    // (Section 2) matches an event's `Leader` first-name here to find who to
+    // remind and at what email. No idColumn (no auto-UUID) — the email is the
+    // natural key. Created by "Set up sheets"; onEdit leaves it alone (no idColumn).
+    LEADERS: {
+      name: 'Leaders',
+      headers: ['leader_name', 'leader_email', 'chapter', 'active', 'notes'],
+      required: ['leader_name', 'leader_email'],
+      dropdowns: {},
       checkboxes: ['active']
     },
 
@@ -252,10 +275,14 @@ function setupSheets() {
 
   SpreadsheetApp.getUi().alert(
     'Sheets ready',
-    'The "Partners", "EventPartnerLinks", and "CapacityChecks" tabs are set up ' +
-    'with headers, dropdowns, and auto-UUID.\n\n' +
-    'Add a row on any tab and its ID fills in automatically. pathway, ' +
-    'cold_storage, partnership_status, and Status are dropdowns.',
+    'The "Partners", "EventPartnerLinks", "Leaders", and "CapacityChecks" tabs ' +
+    'are set up with headers, dropdowns, checkboxes, and auto-UUID.\n\n' +
+    'Add a row on Partners / EventPartnerLinks / CapacityChecks and its ID fills ' +
+    'in automatically. pathway, cold_storage, partnership_status, and Status are ' +
+    'dropdowns. Fill the Leaders tab (leader_name, leader_email, chapter, active) ' +
+    'so leader reminders know who to email.\n\n' +
+    'Daily auto-triggers for Refresh Events and leader reminders were installed ' +
+    '(re-run this any time to repair them).',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
 }
@@ -602,6 +629,11 @@ function linkPartnerToEvents(payload) {
     const recurringSlot = String(data.recurring_slot || '').trim();
     const active = (data.active === true ||
       ['true', 'yes', 'on', '1'].indexOf(String(data.active).trim().toLowerCase()) !== -1);
+    // Mark this partner as the event's PRIMARY (default) partner (Section 1).
+    // When set, every other partner linked to the same event is demoted so only
+    // one primary exists per EventID.
+    const isPrimary = (data.is_primary === true ||
+      ['true', 'yes', 'on', '1'].indexOf(String(data.is_primary).trim().toLowerCase()) !== -1);
 
     if (!partnerId) throw new Error('Pick a partner first.');
     if (!eventIds.length) throw new Error('Select at least one event to link.');
@@ -643,11 +675,12 @@ function linkPartnerToEvents(payload) {
           PartnerID: partnerId,
           active: active,
           recurring_slot: recurringSlot,
-          last_capacity_confirmed: existing.last_capacity_confirmed || ''
+          last_capacity_confirmed: existing.last_capacity_confirmed || '',
+          is_primary: isPrimary
         };
         writeLinkRow_(sheet, existing._row, row, map);
         updated++;
-        details.push({ eventId: eventId, label: label, action: 'updated' });
+        details.push({ eventId: eventId, label: label, action: isPrimary ? 'updated (primary)' : 'updated' });
       } else {
         const row = {
           LinkID: Utilities.getUuid(),
@@ -655,15 +688,41 @@ function linkPartnerToEvents(payload) {
           PartnerID: partnerId,
           active: active,
           recurring_slot: recurringSlot,
-          last_capacity_confirmed: ''
+          last_capacity_confirmed: '',
+          is_primary: isPrimary
         };
         writeLinkRow_(sheet, nextRow, row, map);
         index[partnerId + '|' + eventId] = { _row: nextRow }; // guard dup ids in same call
         nextRow++;
         created++;
-        details.push({ eventId: eventId, label: label, action: 'created' });
+        details.push({ eventId: eventId, label: label, action: isPrimary ? 'created (primary)' : 'created' });
       }
     });
+
+    // Enforce one primary per event: when this partner was set primary for an
+    // event, demote every OTHER partner's link on that same event. `links` was
+    // read before our writes, but it only reflects OTHER partners here (we never
+    // touch another partner's row above), so it's the right set to demote.
+    let demoted = 0;
+    if (isPrimary) {
+      const targetEvents = {};
+      eventIds.forEach(function(eid) { if (eventsById[eid]) targetEvents[eid] = true; });
+      links.forEach(function(l) {
+        if (!targetEvents[l.EventID]) return;
+        if (l.PartnerID === partnerId) return;        // keep our own (just-set) primary
+        if (!isTruthyFlag_(l.is_primary)) return;      // already a backup
+        writeLinkRow_(sheet, l._row, {
+          LinkID: l.LinkID,
+          EventID: l.EventID,
+          PartnerID: l.PartnerID,
+          active: isTruthyFlag_(l.active),
+          recurring_slot: String(l.recurring_slot || ''),
+          last_capacity_confirmed: l.last_capacity_confirmed || '',
+          is_primary: false
+        }, map);
+        demoted++;
+      });
+    }
 
     return {
       partnerName: partner.organization_name,
@@ -671,6 +730,8 @@ function linkPartnerToEvents(payload) {
       updated: updated,
       skipped: skipped,
       active: active,
+      isPrimary: isPrimary,
+      demoted: demoted,
       details: details
     };
   });
@@ -704,6 +765,7 @@ function getLinksForPartner(partnerId) {
         status: ev ? String(ev.Status || '').trim() : '',
         stale: !ev,
         active: isTruthyFlag_(l.active),
+        is_primary: isTruthyFlag_(l.is_primary),
         recurring_slot: String(l.recurring_slot || '').trim(),
         last_capacity_confirmed: String(l.last_capacity_confirmed || '').trim()
       };
@@ -734,6 +796,7 @@ function getLinksForEvent(eventId) {
         location: p ? partnerLocation_(p) : '',
         stale: !p,
         active: isTruthyFlag_(l.active),
+        is_primary: isTruthyFlag_(l.is_primary),
         recurring_slot: String(l.recurring_slot || '').trim(),
         last_capacity_confirmed: String(l.last_capacity_confirmed || '').trim()
       };
@@ -2016,6 +2079,124 @@ function readEventsReference_() {
     .sort(function(a, b) {
       return eventLabel_(a).toLowerCase() < eventLabel_(b).toLowerCase() ? -1 : 1;
     });
+}
+
+// ---------------------------------------------------------------------------
+// Section 1 — Leaders + the leader/primary-partner resolver
+// ---------------------------------------------------------------------------
+
+/** All Leaders rows as objects (rows with a name OR email). */
+function readAllLeaders_() {
+  const spec = CONFIG.SHEETS.LEADERS;
+  const ss = SpreadsheetApp.getActive();
+  const sheet = ss.getSheetByName(spec.name);
+  if (!sheet) return [];
+  return readAllRows_(sheet, spec.headers)
+    .filter(function(r) { return String(r.leader_name || '').trim() || String(r.leader_email || '').trim(); })
+    .map(function(r) {
+      return {
+        name: String(r.leader_name || '').trim(),
+        email: String(r.leader_email || '').trim(),
+        chapter: String(r.chapter || '').trim(),
+        active: isTruthyFlag_(r.active),
+        notes: String(r.notes || '').trim()
+      };
+    });
+}
+
+/**
+ * Resolve an event's chapter leader by matching the event's `Leader` (a first
+ * name from the public Events sheet) to a Leaders-tab row. Prefers an active
+ * match; on a tie of first names, takes the first. Returns a result that always
+ * carries a `flag` string when the leader can't be cleanly reminded (no leader
+ * name on the event, no Leaders row, matched row missing an email, inactive, or
+ * an ambiguous first-name match) — so the caller can surface it rather than fail
+ * silently.
+ */
+function resolveEventLeader_(ev, leaders) {
+  leaders = leaders || readAllLeaders_();
+  const raw = String(ev.Leader || '').trim();
+  const result = { eventLeaderName: raw, name: '', email: '', chapter: '',
+                   matched: false, active: false, ambiguous: false, flag: '' };
+  if (!raw) {
+    result.flag = 'This event has no leader name in Events_Reference — set one on the public Events sheet, then Refresh Events.';
+    return result;
+  }
+  const first = (raw.split(/\s+/)[0] || '').toLowerCase();
+  const matches = leaders.filter(function(l) {
+    const lfirst = (l.name.split(/\s+/)[0] || '').toLowerCase();
+    return lfirst === first || l.name.toLowerCase() === raw.toLowerCase();
+  });
+  if (!matches.length) {
+    result.flag = 'No Leaders row matches “' + raw + '”. Add them on the Leaders tab (leader_name, leader_email).';
+    return result;
+  }
+  const pick = matches.filter(function(l) { return l.active; })[0] || matches[0];
+  result.matched = true;
+  result.name = pick.name;
+  result.email = pick.email;
+  result.chapter = pick.chapter;
+  result.active = pick.active;
+  result.ambiguous = matches.length > 1;
+  if (!pick.email) result.flag = 'Leader “' + pick.name + '” has no email on the Leaders tab.';
+  else if (!pick.active) result.flag = 'Leader “' + pick.name + '” is marked inactive on the Leaders tab.';
+  else if (result.ambiguous) result.flag = 'Multiple leaders share the first name “' + raw + '” — using “' + pick.name + '”. Disambiguate on the Leaders tab if wrong.';
+  return result;
+}
+
+/**
+ * The PRIMARY partner linked to an event (the link with is_primary = TRUE),
+ * joined to its Partners row. Returns null when no primary is set. `partnersById`
+ * / `links` may be passed pre-read to avoid re-reads inside a loop.
+ */
+function resolveEventPrimaryPartner_(eventId, partnersById, links) {
+  if (!partnersById) {
+    partnersById = {};
+    readAllPartners_().forEach(function(p) { partnersById[p.PartnerID] = p; });
+  }
+  links = links || readAllLinks_();
+  const primaries = links.filter(function(l) {
+    return l.EventID === eventId && isTruthyFlag_(l.is_primary);
+  });
+  if (!primaries.length) return null;
+  const l = primaries[0];
+  const p = partnersById[l.PartnerID];
+  return {
+    partnerId: l.PartnerID,
+    found: !!p,
+    name: p ? p.organization_name : ('Unknown partner (' + l.PartnerID + ')'),
+    location: p ? partnerLocation_(p) : '',
+    pathway: p ? String(p.pathway || '').trim() : '',
+    cold_storage: p ? String(p.cold_storage || '').trim() : '',
+    capacity: p ? (Number(p.monthly_capacity_meals) || 0) : 0,
+    recurring_slot: String(l.recurring_slot || '').trim(),
+    active: isTruthyFlag_(l.active),
+    multiple: primaries.length > 1,
+    contactName: p ? String(p.contact_name || '').trim() : '',
+    contactPhone: p ? String(p.contact_phone || '').trim() : '',
+    contactEmail: p ? String(p.contact_email || '').trim() : ''
+  };
+}
+
+/**
+ * Public resolver (Section 1): given an EventID, return its leader (matched to
+ * the Leaders tab, flagged if no clean email match) and its primary partner.
+ * Used by the reminder workflow and the reminder dialog. Internal-only — the
+ * primary partner carries contact fields, which are never published.
+ */
+function resolveEventLeaderAndPrimary(eventId) {
+  const id = String(eventId || '').trim();
+  const ev = readEventsReference_().filter(function(e) { return e.EventID === id; })[0];
+  if (!ev) return { eventId: id, found: false, eventLabel: '', leader: null, primary: null };
+  return {
+    eventId: id,
+    found: true,
+    eventLabel: eventLabel_(ev),
+    saturday: String(ev.Saturday || '').trim(),
+    time: String(ev.Time || '').trim(),
+    leader: resolveEventLeader_(ev),
+    primary: resolveEventPrimaryPartner_(id)
+  };
 }
 
 /**
