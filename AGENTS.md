@@ -37,6 +37,12 @@ The two link by `EventID` (the event map already uses stable UUIDs — see
 4. **Required food-safety fields.** Every partner record MUST have `pathway`
    (`same-day` | `hold-redistribute`) and `cold_storage`. The hold pathway
    legally requires cold storage (see `PRD.md` compliance section).
+   **Phase 5 carve-out (seeded candidates).** Places-seeded `candidate` rows
+   (`source = places`, blank `last_verified`) may carry these BLANK — they're
+   unverified leads, never auto-promoted to active. The gate is enforced at the
+   point of trust: **Edit Partner** rejects a save without a valid `pathway` +
+   `cold_storage`, so a candidate must be qualified before it's activated or
+   relied on. Don't fabricate a pathway for a lead.
 
 ## Stack (reuse the event map's proven patterns)
 - **Database:** Google Sheets (separate workbook).
@@ -52,6 +58,11 @@ The two link by `EventID` (the event map already uses stable UUIDs — see
   subset (rule #1 carve-out) is ever published. Reuses the event map's
   referrer-restricted Maps JS key (add this project's `*.pages.dev` URL to its
   referrers; pass via `?k=` or `FALLBACK_KEY`).
+- **Pantry seeding (Phase 5):** `Seed Pantries` queries the Google Places API
+  (New) server-side for food pantries/banks/soup kitchens near each event and
+  appends them as `candidate` rows. Its key is a SEPARATE server-side key in the
+  `PLACES_API_KEY` Script Property — NOT the public map's referrer-restricted
+  browser key, and never hardcoded in source.
 - Do NOT introduce Supabase, Airtable, or Salesforce. This is the Tier A build.
 
 ## Data model (detail in `docs/DATA_MODEL.md`)

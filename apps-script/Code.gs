@@ -116,7 +116,7 @@ const CONFIG = {
         'service_name', 'contact_name', 'contact_phone', 'contact_email',
         'pathway', 'cold_storage', 'monthly_capacity_meals', 'recurring_slot',
         'partnership_status', 'assigned_chapter', 'agreement_on_file',
-        'agreement_date', 'last_verified', 'FirstAdded'
+        'agreement_date', 'last_verified', 'FirstAdded', 'source', 'hours'
       ],
       required: ['PartnerID', 'organization_name', 'address', 'pathway', 'cold_storage'],
       dropdowns: {
@@ -140,14 +140,16 @@ const CONFIG = {
       checkboxes: ['active']
     },
 
-    // Phase 4 — pre-event capacity check log. One row per (event, date, partner)
-    // ask. Created with Status='sent' by runCapacityCheck() and updated to
-    // confirmed/declined by the Google Form submit trigger (onCapacityFormSubmit).
-    // EventDate / RequestedMeals / ConfirmedMeals carry the volume reconciliation;
-    // the expected event total is reconstructed as sum(RequestedMeals) per group
-    // (runCapacityCheck splits the entered total across partners with no remainder
-    // lost — see splitMeals_). Contact info lives only in Partners; this tab never
-    // stores it, and is internal-only (never part of the published public view).
+    // Phase 4 (corrected in Phase 5) — pre-event capacity check log. One row per
+    // (event, date, partner) ask. Created with Status='sent' by runCapacityCheck()
+    // and updated to confirmed/declined by the Google Form submit trigger
+    // (onCapacityFormSubmit). ConfirmedMeals holds the partner's own number from
+    // their response. The app does NOT set an expected total or compute a
+    // shortfall — the leader reads the confirmed numbers and decides if it's
+    // enough (Phase 5 removed the split/deficit logic). RequestedMeals is retained
+    // for schema/back-compat but is no longer auto-filled. Contact info lives only
+    // in Partners; this tab never stores it, and is internal-only (never part of
+    // the published public view).
     CAPACITY: {
       name: 'CapacityChecks',
       idColumn: 'CheckID',
@@ -182,8 +184,27 @@ const CAPACITY_FORM_TITLES = {
   MEALS: 'Roughly how many meals can you take?'
 };
 const CAPACITY_TRIGGER_FN = 'onCapacityFormSubmit';
-// How many nearest backups to suggest when an event is short on confirmed meals.
-const CAPACITY_BACKUP_LIMIT = 5;
+
+// Phase 5 — "Find Nearby Pantries" recommender. How many nearest partners (from
+// the full candidate+active universe) the leader-initiated recommender returns.
+const FIND_PANTRIES_LIMIT = 20;
+
+// Phase 5 — Google Places seeding config. The Places API key is a SEPARATE
+// server-side key — NOT the referrer-restricted browser Maps key the public map
+// uses. It is read from Script Properties so it never lands in source / git.
+// Set it in the Apps Script editor: Project Settings ▸ Script Properties ▸ add
+// PLACES_API_KEY. RADIUS_MILES / MAX_PER_EVENT are optional overrides.
+const PLACES_PROPS = {
+  API_KEY: 'PLACES_API_KEY',
+  RADIUS_MILES: 'PLACES_RADIUS_MILES',
+  MAX_PER_EVENT: 'PLACES_MAX_PER_EVENT'
+};
+const PLACES_DEFAULTS = { RADIUS_MILES: 15, MAX_PER_EVENT: 20 };
+// Search terms run per event (Places Text Search, New); merged + deduped by id.
+const PLACES_QUERIES = ['food pantry', 'food bank', 'soup kitchen'];
+// A candidate within this many miles of an existing partner of the same
+// normalized name counts as a duplicate and is skipped.
+const PLACES_DUP_MILES = 0.1;
 
 /**
  * Build the "FTC" menu. Add / Edit Partner open the qualify-and-geocode dialogs;
@@ -201,7 +222,9 @@ function onOpen() {
     .addSeparator()
     .addItem('Run Capacity Check', 'openRunCapacityCheckDialog')
     .addItem('View Capacity Status', 'openViewCapacityStatusDialog')
+    .addItem('Find Nearby Pantries', 'openFindPantriesDialog')
     .addSeparator()
+    .addItem('Seed Pantries (Places)', 'seedPantries')
     .addItem('Rebuild public view', 'rebuildPublicView')
     .addSeparator()
     .addItem('Set up sheets', 'setupSheets')
@@ -336,6 +359,11 @@ function updatePartner(rowNumber, data) {
     // Immutable identity / creation date carry over from the stored row.
     draft.PartnerID = String(existing.PartnerID || '').trim() || draft.PartnerID || Utilities.getUuid();
     draft.FirstAdded = existing.FirstAdded || draft.FirstAdded || '';
+
+    // Provenance + hours aren't managed by the Edit dialog (Phase 5) — preserve
+    // them from the stored row so editing a seeded candidate never blanks them.
+    if (!String(draft.source || '').trim()) draft.source = existing.source || '';
+    if (!String(draft.hours || '').trim()) draft.hours = existing.hours || '';
 
     const addressChanged = partnerAddressSig_(draft) !== partnerAddressSig_(existing);
     if (addressChanged) {
@@ -828,30 +856,34 @@ function writePublicSheet_(spec, rows) {
 }
 
 // ===========================================================================
-// Phase 4 — Pre-event capacity check
+// Phase 4 (corrected in Phase 5) — Pre-event capacity check
 // ===========================================================================
 //
-// The week before an event, confirm that each ACTIVE linked partner can absorb
-// the expected volume, log structured responses, and flag a shortfall with
-// nearest backups. Uses the INTERNAL contact fields (Partners.contact_email) to
-// reach partners — these never touch the public view (privacy wall; the public
-// Partners_Public/Links_Public tabs carry no contact or capacity-check data).
+// The week before an event, ask each ACTIVE linked partner whether it can take
+// food and roughly how many meals, and log the structured responses. The app
+// records the numbers; it never sets an expected total or judges sufficiency —
+// the LEADER reads the confirmed numbers and decides if it's enough. Finding more
+// partners is a separate, always-available action ("Find Nearby Pantries"), never
+// gated on a computed shortfall. Uses the INTERNAL contact fields
+// (Partners.contact_email) to reach partners — these never touch the public view
+// (privacy wall; Partners_Public/Links_Public carry no contact or check data).
 //
 // Flow:
-//   1. "Run Capacity Check" — pick an event, its upcoming date, and the expected
-//      total meals. runCapacityCheck() splits that total across the active linked
-//      partners that have a contact email, upserts one CapacityChecks row per
-//      partner (Status='sent'), and emails each contact (MailApp) a unique
-//      Google-Form link prefilled with that row's CheckID.
+//   1. "Run Capacity Check" — pick an event and its upcoming date. For each active
+//      linked partner that has a contact email, upsert one CapacityChecks row
+//      (Status='sent') and email each contact (MailApp) a unique Google-Form link
+//      prefilled with that row's CheckID. No expected total, no per-partner split.
 //   2. Responses come back via that ONE reusable Google Form (NOT reply-scanning).
 //      onCapacityFormSubmit() (an installable trigger) reads the CheckID + Yes/No
 //      + meals and writes Status / ConfirmedMeals / ResponseTimestamp back onto
 //      the matching CapacityChecks row (and stamps the link's
 //      last_capacity_confirmed).
-//   3. "View Capacity Status" — per event+date: each partner's ask vs. confirmed,
-//      the totals, and — if confirmed < expected — the nearest ACTIVE partners
-//      NOT yet linked to that event (by lat/long), with their capacity, as
-//      suggested backups so produced food never has nowhere to go.
+//   3. "View Capacity Status" — per event+date: each partner's response and the
+//      confirmed-meals total. No shortfall judgment.
+//   4. "Find Nearby Pantries" (any time) — ranks the full candidate+active partner
+//      universe by distance from a chosen event, excluding partners already linked
+//      to it, with each one's pathway, capacity, and contact so the leader can
+//      reach out. See nearestPartnersForEvent_ / findNearbyPantries.
 
 /** Open the Run Capacity Check dialog. */
 function openRunCapacityCheckDialog() {
@@ -916,14 +948,15 @@ function getActivePartnersForEvent(eventId) {
 /**
  * Run the pre-event capacity check for one event + date.
  *
- * payload = { eventId, eventDate:'YYYY-MM-DD', expectedMeals }
+ * payload = { eventId, eventDate:'YYYY-MM-DD' }
  *
  * For each ACTIVE linked partner that has a contact email: upsert a
  * CapacityChecks row keyed by (EventID, PartnerID, EventDate) — keeping the
- * CheckID on a re-run so a resend never duplicates a row — with Status='sent',
- * RequestedMeals = its share of the expected total (split with no remainder
- * lost), and a fresh SentTimestamp. Then email each contact a Google-Form link
- * prefilled with that CheckID. Partners with no email are skipped and reported.
+ * CheckID on a re-run so a resend never duplicates a row — with Status='sent'
+ * and a fresh SentTimestamp. There is NO expected total and NO per-partner split
+ * (Phase 5): each partner is simply asked whether it can take food and roughly
+ * how many meals. Then email each contact a Google-Form link prefilled with that
+ * CheckID. Partners with no email are skipped and reported.
  *
  * The form + its submit trigger are created lazily on the first run
  * (ensureCapacityForm_). Emails go out AFTER the sheet lock is released so the
@@ -933,13 +966,9 @@ function runCapacityCheck(payload) {
   const data = payload || {};
   const eventId = String(data.eventId || '').trim();
   const eventDate = String(data.eventDate || '').trim();
-  const expectedMeals = Math.round(Number(data.expectedMeals));
 
   if (!eventId) throw new Error('Pick an event first.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) throw new Error('Pick the event date.');
-  if (!isFinite(expectedMeals) || expectedMeals <= 0) {
-    throw new Error('Enter the expected total meals (a whole number greater than 0).');
-  }
 
   const ev = readEventsReference_().filter(function(e) { return e.EventID === eventId; })[0];
   if (!ev) throw new Error('That event is not in the current Events_Reference. Run Refresh Events and try again.');
@@ -976,9 +1005,6 @@ function runCapacityCheck(payload) {
   // Create / reuse the response form + trigger BEFORE taking the lock.
   const form = ensureCapacityForm_();
 
-  // Split the expected total across reachable partners (sum of shares == total).
-  const shares = splitMeals_(expectedMeals, emailable.length);
-
   // Upsert the CapacityChecks rows under the document lock.
   const recipients = withLock_(function() {
     const spec = CONFIG.SHEETS.CAPACITY;
@@ -993,7 +1019,7 @@ function runCapacityCheck(payload) {
 
     let nextRow = sheet.getLastRow() + 1;
     const out = [];
-    emailable.forEach(function(rec, i) {
+    emailable.forEach(function(rec) {
       const p = rec.partner;
       const prior = index[eventId + '|' + p.PartnerID + '|' + eventDate];
       const checkId = (prior && String(prior.CheckID || '').trim()) || Utilities.getUuid();
@@ -1002,7 +1028,7 @@ function runCapacityCheck(payload) {
         EventID: eventId,
         PartnerID: p.PartnerID,
         EventDate: eventDate,
-        RequestedMeals: shares[i],
+        RequestedMeals: '',          // no expected total to split (Phase 5)
         ConfirmedMeals: '',          // reset — this is a fresh ask
         Status: 'sent',
         SentTimestamp: new Date(),
@@ -1014,7 +1040,7 @@ function runCapacityCheck(payload) {
       out.push({
         checkId: checkId, email: rec.email,
         contactName: String(p.contact_name || '').trim(),
-        orgName: p.organization_name, requested: shares[i]
+        orgName: p.organization_name
       });
     });
     return out;
@@ -1026,8 +1052,8 @@ function runCapacityCheck(payload) {
   recipients.forEach(function(r) {
     try {
       const url = capacityPrefilledUrl_(form, r.checkId);
-      sendCapacityEmail_(r.email, r.contactName, r.orgName, eventLabel, eventDate, r.requested, url);
-      sent.push({ name: r.orgName, email: r.email, requested: r.requested });
+      sendCapacityEmail_(r.email, r.contactName, r.orgName, eventLabel, eventDate, url);
+      sent.push({ name: r.orgName, email: r.email });
     } catch (err) {
       failed.push({ name: r.orgName, email: r.email, error: String(err && err.message ? err.message : err) });
     }
@@ -1036,7 +1062,6 @@ function runCapacityCheck(payload) {
   return {
     eventLabel: eventLabel,
     eventDate: eventDate,
-    expectedMeals: expectedMeals,
     sent: sent,
     failed: failed,
     skipped: skipped,
@@ -1046,8 +1071,9 @@ function runCapacityCheck(payload) {
 
 /**
  * Summary of every capacity check, grouped by (event, date), for the View
- * Capacity Status picker. Expected total per group = sum(RequestedMeals);
- * confirmed total = sum(ConfirmedMeals) over confirmed rows. Newest date first.
+ * Capacity Status picker. Confirmed total per group = sum(ConfirmedMeals) over
+ * confirmed rows. No expected total / shortfall — the app reports, the leader
+ * judges (Phase 5). Newest date first.
  */
 function getCapacityStatusData() {
   const eventsById = {};
@@ -1064,14 +1090,12 @@ function getCapacityStatusData() {
       groups[key] = {
         eventId: eid, eventDate: d,
         label: (ev ? eventLabel_(ev) : ('Event ' + eid)) + (d ? (' · ' + d) : ''),
-        total: 0, confirmed: 0, declined: 0, pending: 0,
-        expected: 0, confirmedMeals: 0
+        total: 0, confirmed: 0, declined: 0, pending: 0, confirmedMeals: 0
       };
     }
     const g = groups[key];
     const st = String(r.Status || '').trim().toLowerCase();
     g.total++;
-    g.expected += Number(r.RequestedMeals) || 0;
     if (st === 'confirmed') { g.confirmed++; g.confirmedMeals += Number(r.ConfirmedMeals) || 0; }
     else if (st === 'declined') { g.declined++; }
     else { g.pending++; }
@@ -1082,20 +1106,20 @@ function getCapacityStatusData() {
     if (a.eventDate !== b.eventDate) return a.eventDate < b.eventDate ? 1 : -1; // newest first
     return String(a.label).toLowerCase() < String(b.label).toLowerCase() ? -1 : 1;
   });
-  list.forEach(function(g) { g.shortfall = Math.max(0, g.expected - g.confirmedMeals); });
   return { groups: list };
 }
 
 /**
- * Full status for one event+date: each partner's ask vs. confirmed meals, the
- * totals, and — when confirmed < expected — a ranked backup list of the nearest
- * ACTIVE partners NOT yet linked to that event (PRD §7.3). Dates are formatted
- * to strings here (google.script.run can't serialize Date objects).
+ * Full status for one event+date: each partner's response and the confirmed-meals
+ * total. No expected total and no shortfall judgment (Phase 5) — the leader reads
+ * the numbers and decides; "Find Nearby Pantries" is the separate, always-on way
+ * to line up more partners. Dates are formatted to strings here
+ * (google.script.run can't serialize Date objects).
  */
 function getCapacityStatus(eventId, eventDate) {
   const eid = String(eventId || '').trim();
   const d = ymd_(eventDate);
-  if (!eid) return { items: [], counts: { total: 0, confirmed: 0, declined: 0, pending: 0 } };
+  if (!eid) return { items: [], confirmedMeals: 0, counts: { total: 0, confirmed: 0, declined: 0, pending: 0 } };
 
   const partnersById = {};
   readAllPartners_().forEach(function(p) { partnersById[p.PartnerID] = p; });
@@ -1105,13 +1129,11 @@ function getCapacityStatus(eventId, eventDate) {
     return String(r.EventID || '').trim() === eid && ymd_(r.EventDate) === d;
   });
 
-  let expected = 0, confirmedMeals = 0, confirmed = 0, declined = 0, pending = 0;
+  let confirmedMeals = 0, confirmed = 0, declined = 0, pending = 0;
   const items = rows.map(function(r) {
     const p = partnersById[r.PartnerID];
     const st = String(r.Status || '').trim().toLowerCase() || 'sent';
-    const req = Number(r.RequestedMeals) || 0;
     const conf = Number(r.ConfirmedMeals) || 0;
-    expected += req;
     if (st === 'confirmed') { confirmed++; confirmedMeals += conf; }
     else if (st === 'declined') { declined++; }
     else { pending++; }
@@ -1119,7 +1141,7 @@ function getCapacityStatus(eventId, eventDate) {
       checkId: r.CheckID, partnerId: r.PartnerID,
       name: p ? p.organization_name : ('Unknown partner (' + r.PartnerID + ')'),
       location: p ? partnerLocation_(p) : '',
-      requested: req, confirmed: conf, status: st,
+      confirmed: conf, status: st,
       sent: formatTs_(r.SentTimestamp), responded: formatTs_(r.ResponseTimestamp),
       stale: !p
     };
@@ -1128,21 +1150,12 @@ function getCapacityStatus(eventId, eventDate) {
     return String(a.name).toLowerCase() < String(b.name).toLowerCase() ? -1 : 1;
   });
 
-  const shortfall = Math.max(0, expected - confirmedMeals);
-  let backups = null;
-  if (shortfall > 0) {
-    const linked = {};
-    readAllLinks_().forEach(function(l) { if (l.EventID === eid) linked[l.PartnerID] = true; });
-    backups = suggestBackups_(eid, linked);
-  }
-
   return {
     eventId: eid, eventDate: d,
     eventLabel: ev ? eventLabel_(ev) : ('Event ' + eid),
     items: items,
-    expected: expected, confirmedMeals: confirmedMeals, shortfall: shortfall,
-    counts: { total: rows.length, confirmed: confirmed, declined: declined, pending: pending },
-    backups: backups
+    confirmedMeals: confirmedMeals,
+    counts: { total: rows.length, confirmed: confirmed, declined: declined, pending: pending }
   };
 }
 
@@ -1250,10 +1263,10 @@ function capacityPrefilledUrl_(form, checkId) {
 /**
  * Installable onFormSubmit trigger. Routes a capacity-check response back to its
  * CapacityChecks row by CheckID: sets Status (confirmed/declined), ConfirmedMeals
- * (the partner's number, or their RequestedMeals if they said yes without one, or
- * 0 if they declined), and ResponseTimestamp. Also stamps the matching link's
- * last_capacity_confirmed. Unknown / missing CheckIDs are ignored. Runs as the
- * user who installed the trigger, so it has full access to the sheet + links.
+ * (the partner's number, or 0 if they said yes without one or declined), and
+ * ResponseTimestamp. Also stamps the matching link's last_capacity_confirmed.
+ * Unknown / missing CheckIDs are ignored. Runs as the user who installed the
+ * trigger, so it has full access to the sheet + links.
  */
 function onCapacityFormSubmit(e) {
   if (!e || !e.response) return;
@@ -1288,9 +1301,7 @@ function onCapacityFormSubmit(e) {
     })[0];
     if (!target) return; // unknown code — ignore
 
-    const confirmedMeals = saidYes
-      ? (meals !== null ? meals : (Number(target.RequestedMeals) || 0))
-      : 0;
+    const confirmedMeals = saidYes ? (meals !== null ? meals : 0) : 0;
     writeCapacityRow_(sheet, target._row, {
       CheckID: target.CheckID,
       EventID: target.EventID,
@@ -1330,7 +1341,7 @@ function touchLinkCapacityConfirmed_(eventId, partnerId) {
  * Internal use of the private contact_email — never published. Sends a plain +
  * branded HTML body.
  */
-function sendCapacityEmail_(to, contactName, orgName, eventLabel, eventDate, requested, url) {
+function sendCapacityEmail_(to, contactName, orgName, eventLabel, eventDate, url) {
   const greeting = contactName ? ('Hi ' + contactName + ',') : 'Hi there,';
   const org = orgName || 'your organization';
   const subject = 'Feed the City — can you take food on ' + eventDate + '?';
@@ -1338,8 +1349,8 @@ function sendCapacityEmail_(to, contactName, orgName, eventLabel, eventDate, req
   const plain = greeting + '\n\n' +
     'Feed the City has an upcoming distribution on ' + eventDate +
     (eventLabel ? ' (' + eventLabel + ')' : '') + '.\n\n' +
-    'Can ' + org + ' take approximately ' + requested + ' meals this cycle?\n\n' +
-    'Please confirm here (takes about 10 seconds):\n' + url + '\n\n' +
+    'Can ' + org + ' take food this cycle, and roughly how many meals?\n\n' +
+    'Please let us know here (takes about 10 seconds):\n' + url + '\n\n' +
     'This link is unique to your organization — please don\'t forward it.\n\n' +
     'Thank you,\nFeed the City';
 
@@ -1348,8 +1359,8 @@ function sendCapacityEmail_(to, contactName, orgName, eventLabel, eventDate, req
       '<p style="margin:0 0 12px">' + escHtml_(greeting) + '</p>' +
       '<p style="margin:0 0 12px">Feed the City has an upcoming distribution on <b>' + escHtml_(eventDate) + '</b>' +
         (eventLabel ? ' (' + escHtml_(eventLabel) + ')' : '') + '.</p>' +
-      '<p style="margin:0 0 16px">Can <b>' + escHtml_(org) + '</b> take approximately <b>' + escHtml_(requested) +
-        ' meals</b> this cycle?</p>' +
+      '<p style="margin:0 0 16px">Can <b>' + escHtml_(org) + '</b> take food this cycle, and ' +
+        'roughly <b>how many meals</b>?</p>' +
       '<p style="margin:0 0 20px">' +
         '<a href="' + escHtml_(url) + '" style="background:#FF6500;color:#fff;text-decoration:none;' +
         'font-weight:700;padding:11px 18px;border-radius:8px;display:inline-block">Confirm capacity →</a>' +
@@ -1366,32 +1377,44 @@ function sendCapacityEmail_(to, contactName, orgName, eventLabel, eventDate, req
 // ---------------------------------------------------------------------------
 
 /**
- * Rank the nearest ACTIVE partners NOT already linked to the event as suggested
- * backups. Ranked by great-circle distance from the event when both have
- * coordinates; if the event has no coordinates, ranked by capacity instead
- * (byCapacity=true so the dialog can say so). Partners without coordinates sort
- * last in distance mode. Capped at CAPACITY_BACKUP_LIMIT.
+ * Rank partners from the full universe (partnership_status candidate OR active;
+ * paused excluded) by distance from an event, EXCLUDING any already linked to it.
+ * The shared engine behind "Find Nearby Pantries" (PRD §7.3, reframed in Phase 5
+ * as a leader-initiated action, no longer gated on a computed shortfall).
+ *
+ * Ranked by great-circle distance from the event when both have coordinates; if
+ * the event has no coordinates, ranked by capacity instead (byCapacity=true so the
+ * dialog can say so). Partners without coordinates sort last in distance mode.
+ * Each item carries pathway, capacity, and INTERNAL contact (name/phone/email) so
+ * the leader can reach out — this runs inside the gated sheet, never public.
+ * Capped at `limit`.
  */
-function suggestBackups_(eventId, excludeIds) {
+function nearestPartnersForEvent_(eventId, excludeIds, limit) {
   const ev = readEventsReference_().filter(function(e) { return e.EventID === eventId; })[0];
   const evLat = ev ? Number(ev.Latitude) : NaN;
   const evLng = ev ? Number(ev.Longitude) : NaN;
   const haveEvCoords = validLatLng_(evLat, evLng);
+  const UNIVERSE = { candidate: true, active: true }; // candidates + actives; paused excluded
 
   const candidates = readAllPartners_().filter(function(p) {
     if (excludeIds[p.PartnerID]) return false;
-    return String(p.partnership_status || '').trim().toLowerCase() === 'active';
+    return UNIVERSE[String(p.partnership_status || '').trim().toLowerCase()] === true;
   }).map(function(p) {
     const lat = Number(p.latitude), lng = Number(p.longitude);
     const has = validLatLng_(lat, lng);
+    const cName = String(p.contact_name || '').trim();
+    const cPhone = String(p.contact_phone || '').trim();
+    const cEmail = String(p.contact_email || '').trim();
     return {
       partnerId: p.PartnerID,
       name: p.organization_name,
       location: partnerLocation_(p),
+      status: String(p.partnership_status || '').trim().toLowerCase(),
       capacity: Number(p.monthly_capacity_meals) || 0,
       pathway: String(p.pathway || '').trim(),
       cold_storage: String(p.cold_storage || '').trim(),
-      hasEmail: !!String(p.contact_email || '').trim(),
+      contactName: cName, contactPhone: cPhone, contactEmail: cEmail,
+      hasContact: !!(cName || cPhone || cEmail),
       distanceMiles: (haveEvCoords && has) ? haversineMiles_(evLat, evLng, lat, lng) : null
     };
   });
@@ -1405,7 +1428,7 @@ function suggestBackups_(eventId, excludeIds) {
     return a.distanceMiles - b.distanceMiles;
   });
 
-  const items = candidates.slice(0, CAPACITY_BACKUP_LIMIT).map(function(c) {
+  const items = candidates.slice(0, limit).map(function(c) {
     if (c.distanceMiles !== null) c.distanceMiles = Math.round(c.distanceMiles * 10) / 10;
     return c;
   });
@@ -1421,21 +1444,6 @@ function haversineMiles_(lat1, lng1, lat2, lng2) {
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/**
- * Split `total` meals across `n` partners as evenly as possible with NO remainder
- * lost: the first (total mod n) partners get one extra. So sum(result) === total,
- * which is what View Capacity Status reconstructs as the expected event total.
- */
-function splitMeals_(total, n) {
-  total = Math.max(0, Math.round(Number(total) || 0));
-  n = Math.max(1, Math.round(n));
-  const base = Math.floor(total / n);
-  const rem = total - base * n;
-  const out = [];
-  for (let i = 0; i < n; i++) out.push(base + (i < rem ? 1 : 0));
-  return out;
 }
 
 /** Parse a meals count out of free text ("about 150" → 150); null if none. */
@@ -1545,6 +1553,312 @@ function ensureCapacityHeaders_(sheet) {
       existing.push(h);
     }
   });
+}
+
+// ===========================================================================
+// Phase 5 — Find Nearby Pantries (leader-initiated recommender)
+// ===========================================================================
+//
+// Any time (not gated on a shortfall), a leader can pick an event and see the
+// nearest partners from the FULL universe (candidate + active; paused excluded)
+// that aren't already linked to it — with each one's pathway, capacity, and
+// contact — so they can reach out. Internal-only (runs inside the gated sheet);
+// contact fields are shown to the leader but never published.
+
+/** Open the Find Nearby Pantries dialog. */
+function openFindPantriesDialog() {
+  const html = HtmlService.createHtmlOutputFromFile('FindPantriesDialog')
+    .setWidth(600).setHeight(760);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Find Nearby Pantries');
+}
+
+/**
+ * Events for the Find Nearby Pantries picker, from the read-only Events_Reference
+ * mirror. `hasCoords` lets the dialog warn when an event has no coordinates (then
+ * results are ranked by capacity rather than distance).
+ */
+function getFindPantriesData() {
+  const events = readEventsReference_().map(function(e) {
+    return { id: e.EventID, label: eventLabel_(e),
+             hasCoords: validLatLng_(e.Latitude, e.Longitude),
+             paused: String(e.Paused || '').trim().toLowerCase() === 'yes' };
+  });
+  return { events: events, hasEvents: events.length > 0 };
+}
+
+/**
+ * The nearest partners to an event for the leader to consider — the full
+ * candidate+active universe minus partners already linked to that event, ranked
+ * by distance (or capacity if the event has no coordinates). Returns name,
+ * distance, pathway, capacity, and contact (PRD §7.3, leader-initiated).
+ */
+function findNearbyPantries(eventId) {
+  const id = String(eventId || '').trim();
+  if (!id) return { eventId: '', eventLabel: '', byCapacity: false, hasEventCoords: false, items: [] };
+
+  const ev = readEventsReference_().filter(function(e) { return e.EventID === id; })[0];
+  const linked = {};
+  readAllLinks_().forEach(function(l) { if (l.EventID === id) linked[l.PartnerID] = true; });
+
+  const res = nearestPartnersForEvent_(id, linked, FIND_PANTRIES_LIMIT);
+  return {
+    eventId: id,
+    eventLabel: ev ? eventLabel_(ev) : ('Event ' + id),
+    byCapacity: res.byCapacity,
+    hasEventCoords: res.hasEventCoords,
+    items: res.items
+  };
+}
+
+// ===========================================================================
+// Phase 5 — Seed Pantries from Google Places
+// ===========================================================================
+//
+// For each geocoded event in Events_Reference, query the Google Places API (New)
+// for food pantries / food banks / soup kitchens within ~15 miles (configurable),
+// keep the ~20 nearest, and append them to Partners as UNVERIFIED candidates
+// (partnership_status = candidate, source = places, blank last_verified). These
+// are leads for human review — pathway / cold_storage are intentionally left
+// blank (the Edit Partner dialog enforces them before a record is trusted /
+// activated), and nothing is auto-promoted to active.
+//
+// Dedup: a place is skipped if an existing partner shares its normalized name and
+// sits within ~0.1 mi — so existing active partners are never re-added. The key
+// is a SEPARATE server-side Places API key (Script Property PLACES_API_KEY), NOT
+// the referrer-restricted browser Maps key the public map uses.
+
+/**
+ * Seed candidate pantries from Google Places for every geocoded event. Fetches
+ * happen outside the document lock (network); rows are appended under the lock.
+ */
+function seedPantries() {
+  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getScriptProperties();
+  const apiKey = String(props.getProperty(PLACES_PROPS.API_KEY) || '').trim();
+  if (!apiKey) {
+    ui.alert('Places API key missing',
+      'Set a server-side Google Places API key first.\n\n' +
+      'In the Apps Script editor: Project Settings ▸ Script Properties ▸ add a ' +
+      'property named "' + PLACES_PROPS.API_KEY + '" with your Places API (New) key.\n\n' +
+      'Use a SEPARATE key from the public map\'s browser key — this one runs ' +
+      'server-side and must NOT be HTTP-referrer-restricted (restrict it to the ' +
+      'Places API instead).',
+      ui.ButtonSet.OK);
+    return;
+  }
+
+  const radiusMiles = Number(props.getProperty(PLACES_PROPS.RADIUS_MILES)) || PLACES_DEFAULTS.RADIUS_MILES;
+  const maxPerEvent = Math.max(1, Math.round(Number(props.getProperty(PLACES_PROPS.MAX_PER_EVENT)) || PLACES_DEFAULTS.MAX_PER_EVENT));
+  const radiusMeters = Math.round(radiusMiles * 1609.34);
+
+  const geoEvents = readEventsReference_().filter(function(e) {
+    return validLatLng_(e.Latitude, e.Longitude);
+  });
+  if (!geoEvents.length) {
+    ui.alert('No geocoded events',
+      'No events in Events_Reference have coordinates to search around. Run ' +
+      'FTC ▸ Refresh Events first (the public Events sheet supplies lat/long), ' +
+      'then try again.',
+      ui.ButtonSet.OK);
+    return;
+  }
+
+  // Existing partner signatures for dedup (normalized name + coords). Grown as we
+  // stage inserts so the same pantry near two events is only added once this run.
+  const sigs = readAllPartners_().map(function(p) {
+    return { name: normalizeName_(p.organization_name),
+             lat: Number(p.latitude), lng: Number(p.longitude) };
+  });
+
+  let added = 0, duplicates = 0, eventsSearched = 0, apiErrors = 0;
+  const toAppend = [];
+
+  geoEvents.forEach(function(ev) {
+    const lat = Number(ev.Latitude), lng = Number(ev.Longitude);
+    let places;
+    try {
+      places = placesNearbyPantries_(apiKey, lat, lng, radiusMeters);
+    } catch (err) {
+      apiErrors++;
+      return;
+    }
+    eventsSearched++;
+
+    const ranked = places.map(function(pl) {
+      pl._dist = (validLatLng_(pl.lat, pl.lng)) ? haversineMiles_(lat, lng, pl.lat, pl.lng) : Infinity;
+      return pl;
+    }).filter(function(pl) { return pl._dist <= radiusMiles; })
+      .sort(function(a, b) { return a._dist - b._dist; })
+      .slice(0, maxPerEvent);
+
+    ranked.forEach(function(pl) {
+      if (isDuplicatePartner_(pl.name, pl.lat, pl.lng, sigs)) { duplicates++; return; }
+      toAppend.push(pl);
+      sigs.push({ name: normalizeName_(pl.name), lat: pl.lat, lng: pl.lng });
+      added++;
+    });
+  });
+
+  if (toAppend.length) {
+    withLock_(function() {
+      const spec = CONFIG.SHEETS.PARTNERS;
+      const sheet = getOrCreateSheet_(spec.name);
+      ensurePartnerHeaders_(sheet);
+      let nextRow = sheet.getLastRow() + 1;
+      const now = new Date();
+      toAppend.forEach(function(pl) {
+        writePartnerRow_(sheet, nextRow, placeToPartnerDraft_(pl, now));
+        nextRow++;
+      });
+    });
+  }
+
+  ui.alert('Pantries seeded',
+    added + ' candidate pantr' + (added === 1 ? 'y' : 'ies') + ' added to Partners ' +
+    '(partnership_status = candidate, source = places, blank last_verified).\n' +
+    duplicates + ' skipped as duplicates of existing partners.\n' +
+    eventsSearched + ' of ' + geoEvents.length + ' event(s) searched within ' + radiusMiles + ' mi' +
+    (apiErrors ? ' (' + apiErrors + ' event search(es) errored — check the Places key / quota).' : '.') +
+    '\n\nThese are UNVERIFIED leads. Qualify each via FTC ▸ Edit Partner — set ' +
+    'pathway + cold_storage (required) and confirm the details — before linking or ' +
+    'activating. None were auto-promoted to active.',
+    ui.ButtonSet.OK);
+}
+
+/**
+ * Run every PLACES_QUERIES term as a Places Text Search around (lat,lng) and merge
+ * the results, deduped by place id. Returns normalized place objects.
+ */
+function placesNearbyPantries_(apiKey, lat, lng, radiusMeters) {
+  const byId = {};
+  PLACES_QUERIES.forEach(function(q) {
+    placesTextSearch_(apiKey, q, lat, lng, radiusMeters).forEach(function(pl) {
+      const id = pl.id || (normalizeName_(pl.name) + '|' + pl.lat + '|' + pl.lng);
+      if (!byId[id]) byId[id] = pl;
+    });
+  });
+  return Object.keys(byId).map(function(k) { return byId[k]; });
+}
+
+/**
+ * One Places API (New) Text Search call (places:searchText) biased to a circle.
+ * Returns up to 20 normalized place objects. Throws a friendly error on non-200.
+ * The API key goes in the X-Goog-Api-Key header; a field mask limits the response
+ * (and the billing SKU) to just the fields we store.
+ */
+function placesTextSearch_(apiKey, query, lat, lng, radiusMeters) {
+  const url = 'https://places.googleapis.com/v1/places:searchText';
+  const payload = {
+    textQuery: query,
+    maxResultCount: 20,
+    locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusMeters } }
+  };
+  const resp = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    muteHttpExceptions: true,
+    headers: {
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': [
+        'places.id', 'places.displayName', 'places.formattedAddress', 'places.location',
+        'places.nationalPhoneNumber', 'places.regularOpeningHours.weekdayDescriptions',
+        'places.types'
+      ].join(',')
+    },
+    payload: JSON.stringify(payload)
+  });
+  const code = resp.getResponseCode();
+  const text = resp.getContentText();
+  if (code !== 200) {
+    let msg = 'Places API returned HTTP ' + code;
+    try { const e = JSON.parse(text); if (e && e.error && e.error.message) msg += ' — ' + e.error.message; } catch (ignore) {}
+    throw new Error(msg);
+  }
+  const data = JSON.parse(text || '{}');
+  return (data.places || []).map(parsePlace_);
+}
+
+/** Normalize one Places (New) result into the fields we store on a Partner row. */
+function parsePlace_(pl) {
+  const loc = pl.location || {};
+  const address = String(pl.formattedAddress || '').trim();
+  const parsed = parseUsAddress_(address);
+  const hours = (pl.regularOpeningHours && pl.regularOpeningHours.weekdayDescriptions || []).join('; ');
+  return {
+    id: String(pl.id || ''),
+    name: String((pl.displayName && pl.displayName.text) || '').trim(),
+    address: address,
+    city: parsed.city, state: parsed.state, postal: parsed.postal,
+    lat: Number(loc.latitude), lng: Number(loc.longitude),
+    phone: String(pl.nationalPhoneNumber || '').trim(),
+    hours: hours,
+    types: pl.types || []
+  };
+}
+
+/** Best-effort parse of "…, City, ST 12345, USA" → {city, state, postal}. */
+function parseUsAddress_(address) {
+  const m = String(address || '').match(/,\s*([^,]+),\s*([A-Z]{2})\s*(\d{5})(?:-\d{4})?/);
+  if (m) return { city: m[1].trim(), state: m[2], postal: m[3] };
+  return { city: '', state: '', postal: '' };
+}
+
+/** Pick a human service_name from the Places type list. */
+function serviceNameFromTypes_(types) {
+  const t = (types || []).map(function(x) { return String(x).toLowerCase(); });
+  if (t.indexOf('food_bank') !== -1) return 'Food bank';
+  if (t.indexOf('soup_kitchen') !== -1) return 'Soup kitchen';
+  return 'Food pantry';
+}
+
+/**
+ * Build a Partners draft from a seeded place. partnership_status = candidate,
+ * source = places, blank last_verified — and pathway / cold_storage left BLANK on
+ * purpose (unknown until a human qualifies the lead; Edit Partner enforces them).
+ * Phone goes into the internal contact_phone; hours into the hours column.
+ */
+function placeToPartnerDraft_(pl, now) {
+  const spec = CONFIG.SHEETS.PARTNERS;
+  const draft = {};
+  spec.headers.forEach(function(h) { draft[h] = ''; });
+  draft.PartnerID = Utilities.getUuid();
+  draft.organization_name = pl.name;
+  draft.address = pl.address;
+  draft.city = pl.city;
+  draft.state = pl.state;
+  draft.postal_code = pl.postal;
+  if (validLatLng_(pl.lat, pl.lng)) { draft.latitude = pl.lat; draft.longitude = pl.lng; }
+  draft.service_name = serviceNameFromTypes_(pl.types);
+  draft.contact_phone = pl.phone;
+  draft.partnership_status = 'candidate';
+  draft.agreement_on_file = false;
+  draft.last_verified = '';   // blank — unconfirmed, needs human review
+  draft.FirstAdded = now;
+  draft.source = 'places';
+  draft.hours = pl.hours;
+  return draft;
+}
+
+/** Lowercase, strip punctuation, collapse whitespace — for name-based dedup. */
+function normalizeName_(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/**
+ * True if a candidate duplicates an existing partner: same normalized name AND
+ * within PLACES_DUP_MILES (or same name when coordinates are missing on either
+ * side — we can't disprove proximity, so we err toward NOT re-adding).
+ */
+function isDuplicatePartner_(name, lat, lng, sigs) {
+  const nn = normalizeName_(name);
+  if (!nn) return false;
+  for (let i = 0; i < sigs.length; i++) {
+    if (sigs[i].name !== nn) continue;
+    const both = validLatLng_(lat, lng) && validLatLng_(sigs[i].lat, sigs[i].lng);
+    if (!both) return true;
+    if (haversineMiles_(lat, lng, sigs[i].lat, sigs[i].lng) <= PLACES_DUP_MILES) return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------

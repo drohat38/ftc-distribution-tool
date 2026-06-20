@@ -6,6 +6,60 @@ project will adopt [Semantic Versioning](https://semver.org/) once it ships.
 
 ## [Unreleased]
 
+### Changed — Phase 5: capacity check no longer judges sufficiency
+
+The pre-event capacity check now **records** numbers without judging them. The
+leader reads the confirmed totals and decides if it's enough; the app never
+computes a shortfall.
+
+- **`runCapacityCheck()`** — dropped the `expectedMeals` input and the even split
+  across partners (`splitMeals_` removed). The payload is now just
+  `{ eventId, eventDate }`; each active linked partner with an email is simply
+  asked whether it can take food and roughly how many meals. `RequestedMeals` is
+  written blank (kept in the schema for back-compat). The ask email no longer
+  states a per-partner meal target.
+- **`getCapacityStatus()` / `getCapacityStatusData()`** — removed `expected`,
+  `shortfall`, and the shortfall-gated backup list. They now return the
+  confirmed-meals total + per-partner responses only. `RunCapacityCheckDialog` /
+  `ViewCapacityStatusDialog` updated to match (no "expected total" field, no
+  Asked/Shortfall stats, no auto-backups).
+- **`onCapacityFormSubmit()`** — a "yes" with no number now records `0` (was: fell
+  back to the partner's `RequestedMeals` share).
+
+### Added — Phase 5: pantry universe + leader-triggered backups (Apps Script)
+
+- **Find Nearby Pantries** (`FTC ▸ Find Nearby Pantries`, new
+  `FindPantriesDialog.html`; `openFindPantriesDialog` / `getFindPantriesData` /
+  `findNearbyPantries`) — pick an event and rank the nearest partners from the
+  **full candidate + active universe** (paused excluded) that aren't already linked
+  to it, by great-circle distance (`nearestPartnersForEvent_`; by capacity when the
+  event has no coordinates). Each item carries name, distance, pathway, capacity,
+  cold storage, and the **internal** contact (name/phone/email) so the leader can
+  reach out. Always available — never gated on a shortfall. `suggestBackups_` was
+  generalized into `nearestPartnersForEvent_`.
+- **Seed Pantries (Places)** (`FTC ▸ Seed Pantries (Places)`; `seedPantries`) — for
+  each geocoded event in `Events_Reference`, query the **Google Places API (New)**
+  Text Search (`places:searchText`) for `food pantry` / `food bank` /
+  `soup kitchen` within ~15 mi (configurable), keep the ~20 nearest, and append
+  them to `Partners` as `partnership_status = candidate`, `source = places`, blank
+  `last_verified`, with name, address, geocoded lat/long (from Places), phone
+  (`contact_phone`), and hours. `pathway` / `cold_storage` are left **blank** on
+  purpose — unverified leads, never auto-promoted to active; Edit Partner enforces
+  them before activation.
+  - **Dedup** (`isDuplicatePartner_` / `normalizeName_`) — a place is skipped if an
+    existing partner shares its normalized name and sits within ~0.1 mi (or shares
+    the name with coordinates missing), so existing active partners aren't re-added;
+    the in-run signature set also prevents the same pantry near two events being
+    added twice.
+  - **Key** — a SEPARATE server-side key in the `PLACES_API_KEY` Script Property
+    (overrides: `PLACES_RADIUS_MILES`, `PLACES_MAX_PER_EVENT`). NOT the public map's
+    referrer-restricted browser key; never hardcoded in source. Reuses the existing
+    `script.external_request` scope — no manifest change.
+- **`Partners` schema** — two new trailing columns (DATA_MODEL Tab 1): `source`
+  (provenance; `places` for seeded rows) and `hours` (opening hours). Edit Partner
+  preserves both (it doesn't manage them). The public view subset is unchanged —
+  neither column is published.
+
 ### Changed — Phase 3.5: docs reconcile (no features)
 - Re-synced `README.md` to the actual build: the Repository layout now lists the
   six Apps Script files (`Code.gs` + the six HTML dialogs), `docs/PUBLIC_MAP.md`,

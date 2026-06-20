@@ -16,16 +16,23 @@ The two link by `EventID` (stable UUIDs already used by the event map — see
 
 ## Status
 
-🚧 **Phase 4 — pre-event capacity check.** A separate, private `FTC Distribution
-(Partners)` Google Sheets workbook exists with a bound Apps Script project. The
-`FTC` menu sets up the `Partners`, `EventPartnerLinks`, and `CapacityChecks` tabs
-(headers, dropdowns, auto-UUID) and covers: Add/Edit Partner with one-time
-geocoding (Phase 2b); Refresh Events + Link Partner to Event(s) + View Links
-(Phase 3a); the public distribution map via Rebuild public view (Phase 3b); and
-now **Run Capacity Check** / **View Capacity Status** — emailing active partners
-to confirm volume the week before an event, logging Google-Form responses back to
-`CapacityChecks`, and suggesting nearest backups on a shortfall. See the build
-phases in [`PRD.md`](PRD.md) §10 and the schema in
+🚧 **Phase 5 — pantry universe + leader-triggered backups.** A separate, private
+`FTC Distribution (Partners)` Google Sheets workbook exists with a bound Apps
+Script project. The `FTC` menu sets up the `Partners`, `EventPartnerLinks`, and
+`CapacityChecks` tabs (headers, dropdowns, auto-UUID) and covers: Add/Edit Partner
+with one-time geocoding (Phase 2b); Refresh Events + Link Partner to Event(s) +
+View Links (Phase 3a); the public distribution map via Rebuild public view
+(Phase 3b); and **Run Capacity Check** / **View Capacity Status** — emailing active
+partners the week before an event and logging Google-Form responses back to
+`CapacityChecks`.
+
+Phase 5 reframes the recommendation as a leader-initiated action and populates the
+universe: the capacity check no longer sets an expected total or judges a shortfall
+(the leader reads the confirmed numbers and decides); **Seed Pantries (Places)**
+bulk-loads food pantries/banks/soup kitchens near each event from the Google Places
+API as unverified `candidate` rows; and **Find Nearby Pantries** ranks the nearest
+candidates + actives to a chosen event (excluding ones already linked), any time.
+See the build phases in [`PRD.md`](PRD.md) §10 and the schema in
 [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 
 ## Stack
@@ -57,6 +64,7 @@ Do **not** introduce Supabase, Airtable, or Salesforce. This is the Tier A build
 │   ├── AddPartnerDialog.html / EditPartnerDialog.html             # Phase 2b — add/edit + geocode
 │   ├── LinkPartnerDialog.html / ViewLinksDialog.html              # Phase 3a — event↔partner links
 │   ├── RunCapacityCheckDialog.html / ViewCapacityStatusDialog.html# Phase 4 — capacity check
+│   ├── FindPantriesDialog.html                                    # Phase 5 — nearby-pantry recommender
 │   └── .clasp.json.example# Copy to .clasp.json and add your scriptId
 ├── docs/
 │   ├── DATA_MODEL.md      # Column-by-column schema: Partners, Links, Events, public tabs, CapacityChecks
@@ -99,8 +107,17 @@ clasp push                       # deploy Code.gs + appsscript.json
 Then, in the sheet: **FTC → Set up sheets** to build the `Partners`,
 `EventPartnerLinks`, and `CapacityChecks` tabs. The full `FTC` menu also covers
 Add/Edit Partner, Refresh Events, Link Partner to Event(s), View Links, Run
-Capacity Check, View Capacity Status, and Rebuild public view. To deploy the
-public map, follow [`docs/PUBLIC_MAP.md`](docs/PUBLIC_MAP.md).
+Capacity Check, View Capacity Status, Find Nearby Pantries, Seed Pantries
+(Places), and Rebuild public view. To deploy the public map, follow
+[`docs/PUBLIC_MAP.md`](docs/PUBLIC_MAP.md).
+
+### 3. Places API key (for Seed Pantries)
+
+**Seed Pantries (Places)** needs a **server-side** Google Places API (New) key —
+separate from the public map's referrer-restricted browser key. In the Apps Script
+editor: **Project Settings ▸ Script Properties ▸** add `PLACES_API_KEY` with the
+key. Restrict that key to the Places API (NOT by HTTP referrer). Optional overrides:
+`PLACES_RADIUS_MILES` (default 15) and `PLACES_MAX_PER_EVENT` (default 20).
 
 `.clasp.json` and `.clasprc.json` are gitignored — they hold your project
 binding and credentials. `apps-script/.clasp.json.example` shows the shape.

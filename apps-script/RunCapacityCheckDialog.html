@@ -56,30 +56,24 @@
 </head>
 <body>
   <h2>Run Pre-Event Capacity Check</h2>
-  <div class="sub">Email each <b>active</b> partner linked to an event to confirm it can take its share of the expected food, the week before. Responses are logged automatically via a one-question form. <b>Internal only.</b></div>
+  <div class="sub">Email each <b>active</b> partner linked to an event to ask whether it can take food the week before, and roughly how many meals. Responses are logged automatically via a short form — you read the numbers and decide. <b>Internal only.</b></div>
 
   <div id="loading" class="notice">Loading events…</div>
 
   <form id="form" style="display:none" onsubmit="run(event)">
     <div class="panel">
-      <div class="panel-title">Event &amp; volume</div>
+      <div class="panel-title">Event &amp; date</div>
       <div class="field">
         <label>Event <span class="req">*</span></label>
         <select id="event" required onchange="loadPartners()">
           <option value="">Pick an event…</option>
         </select>
       </div>
-      <div class="row2">
-        <div class="field">
-          <label>Event date <span class="req">*</span></label>
-          <input type="date" id="eventDate" required>
-        </div>
-        <div class="field">
-          <label>Expected total meals <span class="req">*</span></label>
-          <input type="number" id="expectedMeals" min="1" step="1" placeholder="e.g. 400">
-        </div>
+      <div class="field">
+        <label>Event date <span class="req">*</span></label>
+        <input type="date" id="eventDate" required>
       </div>
-      <div class="field-help">The total is split evenly across the partners below; each is asked for its share.</div>
+      <div class="field-help">Each active partner below is asked whether it can take food on this date, and roughly how many meals. The app records the replies — it doesn't set a target.</div>
     </div>
 
     <div class="panel">
@@ -180,10 +174,8 @@ function run(evt){
   if (evt) evt.preventDefault();
   const eventId = document.getElementById('event').value;
   const eventDate = document.getElementById('eventDate').value;
-  const expectedMeals = document.getElementById('expectedMeals').value;
   if (!eventId){ show('warn', 'Pick an event first.'); return; }
   if (!eventDate){ show('warn', 'Pick the event date.'); return; }
-  if (!expectedMeals || Number(expectedMeals) <= 0){ show('warn', 'Enter the expected total meals.'); return; }
   if (!canUseAppsScript()){ show('bad', 'This dialog only works inside the Google Sheet. Open it from the FTC menu.'); return; }
 
   const btn = document.getElementById('runButton');
@@ -196,7 +188,7 @@ function run(evt){
       show('bad', 'Could not run the check: ' + esc(err && err.message ? err.message : err));
       btn.disabled = false; btn.textContent = 'Send capacity check';
     })
-    .runCapacityCheck({ eventId: eventId, eventDate: eventDate, expectedMeals: Number(expectedMeals) });
+    .runCapacityCheck({ eventId: eventId, eventDate: eventDate });
 }
 
 function handleResult(r){
@@ -204,8 +196,7 @@ function handleResult(r){
   btn.disabled = false; btn.textContent = 'Send capacity check';
 
   const kind = r.failed && r.failed.length ? 'warn' : 'good';
-  let html = '<b>' + esc(r.eventLabel) + '</b> · ' + esc(r.eventDate) +
-    ' — asked for ~' + esc(r.expectedMeals) + ' meals.<br>' +
+  let html = '<b>' + esc(r.eventLabel) + '</b> · ' + esc(r.eventDate) + '<br>' +
     (r.sent.length) + ' email' + (r.sent.length === 1 ? '' : 's') + ' sent';
   if (r.failed && r.failed.length) html += ', ' + r.failed.length + ' failed';
   if (r.skipped && r.skipped.length) html += ', ' + r.skipped.length + ' skipped';
@@ -213,7 +204,7 @@ function handleResult(r){
 
   if (r.sent.length){
     html += '<ul>' + r.sent.map(function(s){
-      return '<li>' + esc(s.name) + ' — ~' + esc(s.requested) + ' meals → ' + esc(s.email) + '</li>';
+      return '<li>' + esc(s.name) + ' → ' + esc(s.email) + '</li>';
     }).join('') + '</ul>';
   }
   if (r.skipped && r.skipped.length){

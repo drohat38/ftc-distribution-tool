@@ -25,8 +25,6 @@
   .stat{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 10px;text-align:center}
   .stat .n{font-size:19px;font-weight:800;color:var(--navy);line-height:1.1}
   .stat .l{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray);margin-top:3px}
-  .stat.short .n{color:var(--red)}
-  .stat.ok .n{color:var(--green)}
 
   .count-line{font-size:11px;color:var(--navy);font-weight:600;margin:0 0 8px}
   .list{list-style:none}
@@ -42,16 +40,6 @@
   .badge.sent{background:#FEF3C7;color:#92400E}
   .badge.stale{background:#FEE2E2;color:#991B1B}
 
-  .shortfall{padding:11px 12px;border-radius:8px;background:#FEE2E2;color:#991B1B;font-size:12px;line-height:1.5;margin-bottom:12px}
-  .shortfall b{font-weight:800}
-  .ok-banner{padding:11px 12px;border-radius:8px;background:#D1FAE5;color:#065F46;font-size:12px;line-height:1.5;margin-bottom:12px}
-  .bk-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--orange);margin:4px 0 8px}
-  .bk{border:1px dashed var(--line);border-radius:9px;padding:9px 10px;margin-bottom:7px;background:#fff}
-  .bk-top{display:flex;align-items:center;gap:8px}
-  .bk-name{font-weight:700;color:var(--navy);font-size:12.5px;flex:1}
-  .bk-dist{font-size:11px;font-weight:700;color:var(--orange)}
-  .bk-meta{font-size:11px;color:var(--ink2);margin-top:4px;display:flex;flex-wrap:wrap;gap:3px 12px}
-
   .empty{padding:16px;text-align:center;color:var(--gray);font-size:12px;background:#fff;border:1px dashed var(--line);border-radius:9px}
   .notice{padding:12px;border-radius:8px;background:var(--orange-lt);border:1.5px solid #FBCF9C;color:#8a3b00;font-size:12px;line-height:1.5}
   .actions{display:flex;gap:8px;margin-top:4px}
@@ -60,7 +48,7 @@
 </head>
 <body>
   <h2>Capacity Check Status</h2>
-  <div class="sub">Per event + date: each partner's ask vs. confirmed meals, and — if the confirmed total falls short — the nearest unlinked active partners as backups. <b>Internal only.</b></div>
+  <div class="sub">Per event + date: each partner's response and the confirmed-meals total. The app records the numbers — you decide if it's enough. Need more partners? Use <b>FTC ▸ Find Nearby Pantries</b>. <b>Internal only.</b></div>
 
   <div id="loading" class="notice">Loading capacity checks…</div>
 
@@ -116,8 +104,9 @@ function init(data){
   GROUPS.forEach(function(g, i){
     const o = document.createElement('option');
     o.value = String(i);
-    const tag = g.shortfall > 0 ? '  ⚠ short ' + g.shortfall : '  ✓';
-    o.textContent = g.label + '  (' + g.confirmedMeals + '/' + g.expected + ' meals)' + tag;
+    o.textContent = g.label + '  — ' + g.confirmed + ' confirmed, ' + g.declined +
+      ' declined, ' + g.pending + ' awaiting' +
+      (g.confirmedMeals ? '  · ' + g.confirmedMeals + ' meals' : '');
     picker.appendChild(o);
   });
 }
@@ -142,28 +131,20 @@ function renderStatus(r){
   let html = '';
 
   html += '<div class="totals">' +
-    '<div class="stat"><div class="n">' + esc(r.expected) + '</div><div class="l">Asked</div></div>' +
-    '<div class="stat ' + (r.shortfall > 0 ? '' : 'ok') + '"><div class="n">' + esc(r.confirmedMeals) + '</div><div class="l">Confirmed</div></div>' +
-    '<div class="stat ' + (r.shortfall > 0 ? 'short' : 'ok') + '"><div class="n">' + esc(r.shortfall) + '</div><div class="l">Shortfall</div></div>' +
+    '<div class="stat"><div class="n">' + esc(r.confirmedMeals) + '</div><div class="l">Meals confirmed</div></div>' +
+    '<div class="stat"><div class="n">' + esc(c.confirmed) + '</div><div class="l">Confirmed</div></div>' +
+    '<div class="stat"><div class="n">' + esc(c.pending) + '</div><div class="l">Awaiting</div></div>' +
     '</div>';
-
-  if (r.shortfall > 0){
-    html += '<div class="shortfall"><b>Short by ' + esc(r.shortfall) + ' meals.</b> ' +
-      c.pending + ' partner' + (c.pending === 1 ? '' : 's') + ' still to respond' +
-      (c.declined ? ', ' + c.declined + ' declined' : '') + '. Consider the backups below.</div>';
-  } else {
-    html += '<div class="ok-banner"><b>Covered.</b> Confirmed meals meet the expected total for this event.</div>';
-  }
 
   html += '<div class="count-line">' + esc(r.eventLabel) + ' · ' + esc(r.eventDate) +
     ' — ' + c.total + ' partner' + (c.total === 1 ? '' : 's') +
-    ' (' + c.confirmed + ' confirmed, ' + c.declined + ' declined, ' + c.pending + ' awaiting)</div>';
+    ' (' + c.confirmed + ' confirmed, ' + c.declined + ' declined, ' + c.pending + ' awaiting). ' +
+    'You decide whether the confirmed total covers this event.</div>';
 
   if ((r.items || []).length){
     html += '<ul class="list">' + r.items.map(function(it){
       const meta = [];
-      meta.push('<b>Asked:</b> ' + esc(it.requested));
-      if (it.status === 'confirmed') meta.push('<b>Confirmed:</b> ' + esc(it.confirmed));
+      if (it.status === 'confirmed') meta.push('<b>Can take:</b> ' + esc(it.confirmed) + ' meals');
       if (it.sent) meta.push('<b>Sent:</b> ' + esc(it.sent));
       if (it.responded) meta.push('<b>Replied:</b> ' + esc(it.responded));
       return '<li class="item"><div class="item-top">' +
@@ -171,34 +152,13 @@ function renderStatus(r){
         (it.stale ? ' <span class="badge stale">partner missing</span>' : '') +
         '</div>' +
         (it.location ? '<div class="item-loc">' + esc(it.location) + '</div>' : '') +
-        '<div class="item-meta">' + meta.join('') + '</div></li>';
+        (meta.length ? '<div class="item-meta">' + meta.join('') + '</div>' : '') + '</li>';
     }).join('') + '</ul>';
   } else {
     html += '<div class="empty">No partners in this check.</div>';
   }
 
-  if (r.backups && r.backups.items && r.backups.items.length){
-    html += '<div class="bk-title">Suggested backups — nearest unlinked active partners' +
-      (r.backups.byCapacity ? ' (by capacity — event has no coordinates)' : '') + '</div>';
-    html += r.backups.items.map(function(b){
-      const meta = [];
-      meta.push('<b>Capacity:</b> ' + esc(b.capacity) + '/mo');
-      if (b.pathway) meta.push('<b>Pathway:</b> ' + esc(b.pathway));
-      if (b.cold_storage) meta.push('<b>Cold storage:</b> ' + esc(b.cold_storage));
-      if (!b.hasEmail) meta.push('<b style="color:#991B1B">no email on file</b>');
-      const dist = (b.distanceMiles !== null && b.distanceMiles !== undefined)
-        ? esc(b.distanceMiles) + ' mi' : '';
-      return '<div class="bk"><div class="bk-top">' +
-        '<span class="bk-name">' + esc(b.name) + '</span>' +
-        (dist ? '<span class="bk-dist">' + dist + '</span>' : '') +
-        '</div>' +
-        (b.location ? '<div class="item-loc">' + esc(b.location) + '</div>' : '') +
-        '<div class="bk-meta">' + meta.join('') + '</div></div>';
-    }).join('');
-    html += '<div class="sub" style="margin-top:8px">Link a backup via <b>FTC ▸ Link Partner to Event(s)</b>, then re-run the check.</div>';
-  } else if (r.shortfall > 0){
-    html += '<div class="empty">No unlinked active partners available as backups.</div>';
-  }
+  html += '<div class="sub" style="margin-top:8px">Need more partners for this event? Use <b>FTC ▸ Find Nearby Pantries</b> to rank the nearest candidates &amp; actives, then link one via <b>FTC ▸ Link Partner to Event(s)</b>.</div>';
 
   document.getElementById('results').innerHTML = html;
 }

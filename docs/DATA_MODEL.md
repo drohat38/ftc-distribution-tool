@@ -58,6 +58,8 @@ re-geocoded on map load.
 | 22 | `agreement_date` | date | | …and when it was signed. |
 | 23 | `last_verified` | date | | **The single most important field** (PRD §8). Surfaced on every record so users know what to trust; refreshed monthly by the named data owner. Set to "now" on add; refreshed on every Edit save. |
 | 24 | `FirstAdded` | date | | **System / immutable.** When the record was first created. Stamped once by the Add Partner dialog and never changed by Edit (mirrors the Events sheet's `FirstAdded`). Distinct from `last_verified`, which moves. |
+| 25 | `source` | text | | **Provenance (Phase 5).** `places` for rows seeded from Google Places by **Seed Pantries**; blank for hand-added partners. Preserved by Edit (the dialog doesn't manage it). |
+| 26 | `hours` | text | | **Opening hours (Phase 5).** Free text — Places' `weekdayDescriptions` joined with `; ` for seeded rows. Preserved by Edit. |
 
 > **Reconciliation note (Phase 2b).** PRD §5 lists `last_verified` but no
 > creation timestamp. The Add/Edit workflow needs an *immutable* "when was this
@@ -92,6 +94,15 @@ re-geocoded on map load.
   source, date of preparation), and ability to substantiate recipient storage.
 
 The Add/Edit UI must make the hold pathway visibly require a chilling step.
+
+> **Seeded candidates (Phase 5) — required-fields carve-out.** Rows seeded from
+> Google Places by **Seed Pantries** are written as `partnership_status =
+> candidate`, `source = places`, blank `last_verified`, and **blank `pathway` /
+> `cold_storage`** — these are unknown until a human qualifies the lead. They are
+> unverified leads, never auto-promoted to active. The required-fields gate
+> (AGENTS rule #4) is enforced where it matters: **Edit Partner** rejects a save
+> without a valid `pathway` + `cold_storage`, so a candidate can't be activated or
+> relied on until it's qualified. See AGENTS.md rule #4's Phase-5 note.
 
 ---
 
@@ -209,8 +220,8 @@ data in the public view. Built by `Set up sheets`; `CheckID` auto-fills via the
 | 2 | `EventID` | UUID (text) | ✅ | **Foreign key → Events (`EventID`).** |
 | 3 | `PartnerID` | UUID (text) | ✅ | **Foreign key → `Partners.PartnerID`.** |
 | 4 | `EventDate` | date (`YYYY-MM-DD`) | | The upcoming distribution date this ask is for. Part of the upsert key (`EventID`+`PartnerID`+`EventDate`). |
-| 5 | `RequestedMeals` | number | | The partner's share of the expected event total (split evenly, no remainder lost). `sum(RequestedMeals)` per group reconstructs the expected total in **View Capacity Status**. |
-| 6 | `ConfirmedMeals` | number | | Set on response: the partner's number (or their `RequestedMeals` if they said yes without one, or `0` if declined). |
+| 5 | `RequestedMeals` | number | | **Legacy (Phase 5).** Retained for schema/back-compat but no longer auto-filled — there is no expected total to split. New checks write it blank. |
+| 6 | `ConfirmedMeals` | number | | Set on response: the partner's own number (or `0` if they said yes without one, or declined). |
 | 7 | `Status` | enum | | **Dropdown:** `sent` \| `confirmed` \| `declined` \| `no-response`. `sent` on creation; the form trigger flips it to `confirmed`/`declined`. |
 | 8 | `SentTimestamp` | datetime | | When the ask email went out (reset on each re-run). |
 | 9 | `ResponseTimestamp` | datetime | | When the partner submitted the form (reset to blank on a re-run). |
@@ -221,10 +232,14 @@ data in the public view. Built by `Set up sheets`; `CheckID` auto-fills via the
 > columns 6–9 by `CheckID`, and stamps the matching `EventPartnerLinks` row's
 > `last_capacity_confirmed`.
 
-> **Shortfall + backups.** When `sum(ConfirmedMeals) < sum(RequestedMeals)` for an
-> event+date, View Capacity Status ranks the nearest **active** partners NOT yet
-> linked to that event (by lat/long; by capacity if the event has no coordinates)
-> as suggested backups.
+> **No shortfall judgment (Phase 5).** View Capacity Status reports each partner's
+> response and the confirmed-meals total; it does **not** set an expected total or
+> compute a shortfall — the leader reads the numbers and decides. Lining up more
+> partners is a separate, always-available action, **Find Nearby Pantries**, which
+> ranks the nearest partners from the full **candidate + active** universe NOT yet
+> linked to the event (by lat/long; by capacity if the event has no coordinates),
+> with each one's pathway, capacity, and contact. It is never gated on a computed
+> shortfall.
 
 ---
 

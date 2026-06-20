@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  :root{
+    --orange:#FF6500;--orange-lt:#FFF1E6;--orange-dk:#CC5000;
+    --navy:#003366;
+    --ink:#1A1A1A;--ink2:#3c4043;--gray:#6B7280;
+    --line:#E5E7EB;--line-soft:#F1F3F4;--bg:#FAFAF7;
+    --green:#059669;--red:#DC2626;--amber:#D97706;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Roboto,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);padding:18px 22px;font-size:13px;line-height:1.4}
+  h2{font-size:18px;font-weight:700;margin-bottom:4px;color:var(--navy)}
+  .sub{color:var(--gray);font-size:12px;line-height:1.45;margin-bottom:14px}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px}
+  .field{margin-bottom:0}
+  label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray);margin-bottom:4px}
+  select{width:100%;border:1.5px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);font:inherit;padding:9px 10px}
+  select:focus{outline:none;border-color:var(--orange)}
+
+  .count-line{font-size:11px;color:var(--navy);font-weight:600;margin:0 0 8px}
+  .list{list-style:none}
+  .item{border:1px solid var(--line);border-radius:9px;padding:10px 11px;margin-bottom:8px;background:#fff}
+  .item-top{display:flex;align-items:center;gap:8px}
+  .item-name{font-weight:700;color:var(--navy);font-size:13px;flex:1}
+  .item-dist{font-size:11px;font-weight:700;color:var(--orange)}
+  .item-loc{font-size:11px;color:var(--gray);margin-top:2px}
+  .item-meta{font-size:11px;color:var(--ink2);margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 14px}
+  .item-meta b{color:var(--ink)}
+  .contact{font-size:11px;color:var(--ink2);margin-top:6px;padding-top:6px;border-top:1px solid var(--line-soft);display:flex;flex-wrap:wrap;gap:4px 14px}
+  .contact b{color:var(--navy)}
+  .badge{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:4px}
+  .badge.active{background:#D1FAE5;color:#065F46}
+  .badge.candidate{background:#FEF3C7;color:#92400E}
+  .badge.warn{background:#FEE2E2;color:#991B1B}
+
+  .empty{padding:16px;text-align:center;color:var(--gray);font-size:12px;background:#fff;border:1px dashed var(--line);border-radius:9px}
+  .notice{padding:12px;border-radius:8px;background:var(--orange-lt);border:1.5px solid #FBCF9C;color:#8a3b00;font-size:12px;line-height:1.5}
+  .notice b{display:block;margin-bottom:3px}
+  .actions{display:flex;gap:8px;margin-top:4px}
+  button.btn{padding:10px 13px;background:#fff;border:1.5px solid var(--line);color:var(--ink);border-radius:8px;font:inherit;font-weight:500;cursor:pointer}
+</style>
+</head>
+<body>
+  <h2>Find Nearby Pantries</h2>
+  <div class="sub">Pick an event to rank the nearest partners — <b>candidates and actives</b> — that aren't already linked to it, with each one's pathway, capacity, and contact so you can reach out. Includes <b>unverified candidates</b> (seeded from Places); confirm details before relying on one. <b>Internal only.</b></div>
+
+  <div id="loading" class="notice">Loading events…</div>
+
+  <div id="ui" style="display:none">
+    <div class="panel">
+      <div class="field">
+        <label>Event</label>
+        <select id="picker" onchange="loadNearby()"><option value="">Pick an event…</option></select>
+      </div>
+    </div>
+    <div id="results"></div>
+    <div class="actions">
+      <button type="button" class="btn" onclick="closeDialog()">Done</button>
+    </div>
+  </div>
+
+  <div id="noEvents" class="notice" style="display:none">
+    <b>No events yet.</b>
+    Run <b>FTC ▸ Refresh Events</b> first to pull in the published events, then reopen this dialog.
+  </div>
+
+<script>
+let EVENTS = [];
+
+function canUseAppsScript(){
+  return typeof google !== 'undefined' && google.script && google.script.run;
+}
+function esc(v){
+  return String(v == null ? '' : v).replace(/[&<>"']/g, function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+  });
+}
+function closeDialog(){ if (canUseAppsScript()) google.script.host.close(); }
+
+function statusBadge(st){
+  const s = (st || '').toLowerCase();
+  if (s === 'active') return '<span class="badge active">active</span>';
+  if (s === 'candidate') return '<span class="badge candidate">candidate</span>';
+  return '<span class="badge candidate">' + esc(s || 'partner') + '</span>';
+}
+
+function init(data){
+  EVENTS = data.events || [];
+  document.getElementById('loading').style.display = 'none';
+  if (!data.hasEvents){
+    document.getElementById('noEvents').style.display = 'block';
+    return;
+  }
+  document.getElementById('ui').style.display = 'block';
+  const picker = document.getElementById('picker');
+  EVENTS.forEach(function(ev){
+    const o = document.createElement('option');
+    o.value = ev.id;
+    o.textContent = ev.label + (ev.paused ? ' (paused)' : '') + (ev.hasCoords ? '' : ' — no coordinates');
+    picker.appendChild(o);
+  });
+}
+
+function loadNearby(){
+  const id = document.getElementById('picker').value;
+  const results = document.getElementById('results');
+  if (!id){ results.innerHTML = ''; return; }
+  results.innerHTML = '<div class="notice">Finding nearby partners…</div>';
+  if (!canUseAppsScript()) return;
+  google.script.run
+    .withSuccessHandler(render)
+    .withFailureHandler(function(err){
+      results.innerHTML = '<div class="empty">Could not load: ' + esc(err && err.message ? err.message : err) + '</div>';
+    })
+    .findNearbyPantries(id);
+}
+
+function render(r){
+  const items = r.items || [];
+  let html = '';
+
+  html += '<div class="count-line">' + esc(r.eventLabel) + ' — ' + items.length +
+    ' nearest partner' + (items.length === 1 ? '' : 's') +
+    (r.byCapacity ? ' (ranked by capacity — event has no coordinates)' : ' (ranked by distance)') + '</div>';
+
+  if (!items.length){
+    html += '<div class="empty">No unlinked candidate or active partners found. Seed more with <b>FTC ▸ Seed Pantries (Places)</b>, or add one via <b>FTC ▸ Add Partner</b>.</div>';
+    document.getElementById('results').innerHTML = html;
+    return;
+  }
+
+  html += '<ul class="list">' + items.map(function(it){
+    const meta = [];
+    meta.push('<b>Capacity:</b> ' + esc(it.capacity) + '/mo');
+    if (it.pathway) meta.push('<b>Pathway:</b> ' + esc(it.pathway));
+    if (it.cold_storage) meta.push('<b>Cold storage:</b> ' + esc(it.cold_storage));
+
+    const contact = [];
+    if (it.contactName) contact.push('<b>' + esc(it.contactName) + '</b>');
+    if (it.contactPhone) contact.push(esc(it.contactPhone));
+    if (it.contactEmail) contact.push(esc(it.contactEmail));
+    const contactHtml = contact.length
+      ? '<div class="contact">' + contact.join('') + '</div>'
+      : '<div class="contact"><b style="color:#991B1B">No contact on file</b></div>';
+
+    const dist = (it.distanceMiles !== null && it.distanceMiles !== undefined)
+      ? '<span class="item-dist">' + esc(it.distanceMiles) + ' mi</span>' : '';
+
+    return '<li class="item"><div class="item-top">' +
+      '<span class="item-name">' + esc(it.name) + '</span>' + dist + ' ' + statusBadge(it.status) +
+      '</div>' +
+      (it.location ? '<div class="item-loc">' + esc(it.location) + '</div>' : '') +
+      '<div class="item-meta">' + meta.join('') + '</div>' +
+      contactHtml +
+      '</li>';
+  }).join('') + '</ul>';
+
+  html += '<div class="sub" style="margin-top:8px">Reach out, then link a partner via <b>FTC ▸ Link Partner to Event(s)</b>. Candidates need their pathway + cold storage set in <b>FTC ▸ Edit Partner</b> before activation.</div>';
+
+  document.getElementById('results').innerHTML = html;
+}
+
+if (canUseAppsScript()){
+  google.script.run
+    .withSuccessHandler(init)
+    .withFailureHandler(function(err){
+      document.getElementById('loading').innerHTML = '<b>Could not load.</b> ' + esc(err && err.message ? err.message : err);
+    })
+    .getFindPantriesData();
+} else {
+  document.getElementById('loading').innerHTML =
+    '<b>Preview outside Google Sheets.</b> Open this from the FTC menu → Find Nearby Pantries.';
+}
+</script>
+</body>
+</html>
