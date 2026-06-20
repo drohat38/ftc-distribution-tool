@@ -1295,7 +1295,14 @@ function onCapacityFormSubmit(e) {
   if (!checkId) return; // can't route without the reference code
 
   const saidYes = /^yes/i.test(yesNo);
-  const meals = parseMeals_(mealsRaw);
+  // Read the partner's OWN stated number from their reply and log it as-is. This
+  // is NOT a prediction or a target — just the partner's answer ('' / no digits
+  // → null). Section 0: the app never computes an expected total or a shortfall.
+  let meals = null;
+  if (mealsRaw !== '' && mealsRaw !== null && mealsRaw !== undefined) {
+    const m = String(mealsRaw).replace(/[,\s]/g, '').match(/-?\d+(\.\d+)?/);
+    if (m) { const n = Math.round(Number(m[0])); meals = isFinite(n) ? Math.max(0, n) : null; }
+  }
 
   withLock_(function() {
     const spec = CONFIG.SHEETS.CAPACITY;
@@ -1450,15 +1457,6 @@ function haversineMiles_(lat1, lng1, lat2, lng2) {
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/** Parse a meals count out of free text ("about 150" → 150); null if none. */
-function parseMeals_(raw) {
-  if (raw === '' || raw === null || raw === undefined) return null;
-  const m = String(raw).replace(/[,\s]/g, '').match(/-?\d+(\.\d+)?/);
-  if (!m) return null;
-  const n = Math.round(Number(m[0]));
-  return isFinite(n) ? Math.max(0, n) : null;
 }
 
 /** Normalize a stored date (Date or text) to a 'YYYY-MM-DD' string for keys/labels. */
