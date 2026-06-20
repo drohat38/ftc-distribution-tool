@@ -1221,6 +1221,21 @@ function upsertCapacityCheck_(eventId, partnerId, eventDate) {
  * fields (shown to the leader only; never published). MailApp, plain + branded
  * HTML.
  */
+/**
+ * The ready-to-send message a leader forwards to a partner (primary or backup):
+ * a short ask with the partner's PREFILLED form link embedded so the reply logs
+ * to CapacityChecks. Shared by the leader reminder email (Section 2) and the
+ * "Find Nearby Pantries" backup link (Section 5).
+ */
+function buildPartnerFormTemplate_(senderName, partnerContactName, org, label, dateYmd, time, url) {
+  return 'Hi ' + (partnerContactName || 'there') + ',\n\n' +
+    'This is ' + (senderName || 'Feed the City') + ' with Feed the City. We have an upcoming ' +
+    'food distribution on ' + dateYmd + (time ? (' (' + time + ')') : '') + ' — ' + label + '. ' +
+    'Can ' + (org || 'your organization') + ' take food this cycle, and roughly how many meals?\n\n' +
+    'Please let us know here (about 10 seconds): ' + url + '\n\n' +
+    'Thank you so much!\n' + (senderName || 'Feed the City');
+}
+
 function sendLeaderReminderEmail_(leader, ev, dateYmd, primary, url) {
   const label = eventLabel_(ev);
   const time = String(ev.Time || '').trim();
@@ -1236,13 +1251,9 @@ function sendLeaderReminderEmail_(leader, ev, dateYmd, primary, url) {
   const contactLine = contactBits.length ? contactBits.join(' · ') : 'No contact on file — add one via FTC ▸ Edit Partner.';
 
   // The template the leader forwards to the partner (carries the prefilled link).
-  const template =
-    'Hi ' + partnerContactName + ',\n\n' +
-    'This is ' + (leader.name || 'your Feed the City chapter leader') + ' with Feed the City. ' +
-    'We have an upcoming food distribution on ' + dateYmd + (time ? (' (' + time + ')') : '') +
-    ' — ' + label + '. Can ' + org + ' take food this cycle, and roughly how many meals?\n\n' +
-    'Please let us know here (about 10 seconds): ' + url + '\n\n' +
-    'Thank you so much!\n' + (leader.name || 'Feed the City');
+  const template = buildPartnerFormTemplate_(
+    leader.name || 'your Feed the City chapter leader',
+    partnerContactName, org, label, dateYmd, time, url);
 
   const plain = 'Hi ' + leaderFirst + ',\n\n' +
     'Reminder: ' + label + ' is coming up on ' + dateYmd + (time ? (' (' + time + ')') : '') + '.\n\n' +
@@ -1968,6 +1979,39 @@ function findNearbyPantries(eventId) {
     hasEventCoords: res.hasEventCoords,
     items: res.items
   };
+}
+
+/**
+ * Prepare a prefilled capacity-form link for a BACKUP partner (Section 5) so the
+ * leader can reach out "the same way" as the primary. Generated on demand (when
+ * the leader picks a backup) rather than eagerly for all results — so browsing
+ * Find Nearby Pantries never mints CapacityChecks rows for partners no one
+ * contacts. Upserts the (event, partner, next-date) row, then returns the
+ * prefilled URL + a ready-to-send template. The partner's reply logs back to
+ * CapacityChecks exactly like the primary's.
+ */
+function getBackupReminderLink(eventId, partnerId) {
+  const eid = String(eventId || '').trim();
+  const pid = String(partnerId || '').trim();
+  if (!eid || !pid) throw new Error('Missing event or partner.');
+
+  const ev = readEventsReference_().filter(function(e) { return e.EventID === eid; })[0];
+  if (!ev) throw new Error('That event is not in the current Events_Reference. Run Refresh Events and try again.');
+  const p = readAllPartners_().filter(function(x) { return x.PartnerID === pid; })[0];
+  if (!p) throw new Error('That partner no longer exists.');
+
+  const occ = nextEventOccurrence_(ev.Saturday, todayLocal_());
+  const dateYmd = occ ? ymdLocal_(occ) : '';
+  if (!dateYmd) throw new Error('Could not compute the event date from its Saturday-of-month.');
+
+  const form = ensureCapacityForm_();
+  const checkId = upsertCapacityCheck_(eid, pid, dateYmd);
+  const url = capacityPrefilledUrl_(form, checkId);
+  const template = buildPartnerFormTemplate_(
+    'Feed the City', String(p.contact_name || '').trim() || 'there',
+    p.organization_name, eventLabel_(ev), dateYmd, String(ev.Time || '').trim(), url);
+
+  return { ok: true, partnerName: p.organization_name, eventDate: dateYmd, url: url, template: template };
 }
 
 // ===========================================================================

@@ -41,6 +41,11 @@
   .notice b{display:block;margin-bottom:3px}
   .actions{display:flex;gap:8px;margin-top:4px}
   button.btn{padding:10px 13px;background:#fff;border:1.5px solid var(--line);color:var(--ink);border-radius:8px;font:inherit;font-weight:500;cursor:pointer}
+  button.linkbtn{margin-top:8px;padding:6px 10px;font-size:11px;font-weight:700;background:var(--orange-lt);border:1.5px solid #FBCF9C;color:#8a3b00;border-radius:7px;cursor:pointer}
+  button.linkbtn:disabled{opacity:.6;cursor:default}
+  .linkbox{margin-top:8px;padding:9px 10px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px}
+  .linkbox a{word-break:break-all;font-size:11px;color:#065F46}
+  .linkbox textarea{width:100%;height:118px;font-size:11px;border:1px solid var(--line);border-radius:6px;padding:7px;margin-top:4px;font-family:inherit;resize:vertical}
 </style>
 </head>
 <body>
@@ -69,6 +74,7 @@
 
 <script>
 let EVENTS = [];
+let CUR_EVENT = '';
 
 function canUseAppsScript(){
   return typeof google !== 'undefined' && google.script && google.script.run;
@@ -120,6 +126,7 @@ function loadNearby(){
 
 function render(r){
   const items = r.items || [];
+  CUR_EVENT = r.eventId || '';
   let html = '';
 
   html += '<div class="count-line">' + esc(r.eventLabel) + ' — ' + items.length +
@@ -155,12 +162,41 @@ function render(r){
       (it.location ? '<div class="item-loc">' + esc(it.location) + '</div>' : '') +
       '<div class="item-meta">' + meta.join('') + '</div>' +
       contactHtml +
+      '<button type="button" class="linkbtn" onclick="backupLink(\'' + esc(it.partnerId) + '\', this)">Get backup form link</button>' +
+      '<div class="linkout"></div>' +
       '</li>';
   }).join('') + '</ul>';
 
-  html += '<div class="sub" style="margin-top:8px">Reach out, then link a partner via <b>FTC ▸ Link Partner to Event(s)</b>. Candidates need their pathway + cold storage set in <b>FTC ▸ Edit Partner</b> before activation.</div>';
+  html += '<div class="sub" style="margin-top:8px">Reach out (use <b>Get backup form link</b> to email a backup the same way as the primary), then link a partner via <b>FTC ▸ Link Partner to Event(s)</b>. Candidates need their pathway + cold storage set in <b>FTC ▸ Edit Partner</b> before activation.</div>';
 
   document.getElementById('results').innerHTML = html;
+}
+
+// On demand: build a prefilled capacity-form link for one backup partner so the
+// leader can email them the same way as the primary (the reply logs to
+// CapacityChecks). Generated only when clicked — browsing never mints rows.
+function backupLink(partnerId, btn){
+  if (!canUseAppsScript()) return;
+  const out = btn.nextElementSibling;
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Preparing…';
+  out.innerHTML = '';
+  google.script.run
+    .withSuccessHandler(function(res){
+      btn.disabled = false; btn.textContent = old;
+      out.innerHTML =
+        '<div class="linkbox">' +
+        '<div style="font-size:11px;color:#065F46;font-weight:700;margin-bottom:4px">Prefilled form link · for ' + esc(res.eventDate) + ' (logs their reply):</div>' +
+        '<a href="' + esc(res.url) + '" target="_blank" rel="noopener">' + esc(res.url) + '</a>' +
+        '<div style="font-size:10px;color:#6B7280;margin:8px 0 0">Copy this message to the backup (click to select):</div>' +
+        '<textarea readonly onclick="this.select()">' + esc(res.template) + '</textarea>' +
+        '</div>';
+    })
+    .withFailureHandler(function(err){
+      btn.disabled = false; btn.textContent = old;
+      out.innerHTML = '<div class="badge warn" style="display:inline-block;margin-top:6px">Could not prepare link: ' + esc(err && err.message ? err.message : err) + '</div>';
+    })
+    .getBackupReminderLink(CUR_EVENT, partnerId);
 }
 
 if (canUseAppsScript()){
