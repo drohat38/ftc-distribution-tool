@@ -132,9 +132,10 @@ duplicate.
 ## Tab 3 — `Events_Reference` (read-only mirror, Phase 3a)
 
 A local, **read-only mirror** of the public event-map Events sheet, populated by
-the **Refresh Events** menu action (`refreshEvents()` in `apps-script/Code.gs`).
-It exists only so partner links have something to join against inside this
-workbook. Every refresh fetches the public published Events CSV
+the **Refresh Events** menu action (`refreshEvents()` in `apps-script/Code.gs`)
+**and a daily time-trigger** (`ensureRefreshTrigger_`, Section 3) so it stays
+current without anyone clicking. It exists only so partner links have something to
+join against inside this workbook. Every refresh fetches the public published Events CSV
 (`CONFIG.EVENTS_CSV_URL` — the same URL the public map reads), clears the data
 rows, and rewrites them (deduped by `EventID`; rows with no `EventID` skipped).
 
@@ -213,12 +214,22 @@ published) to draw event pins, partner pins, and the connecting lines.
 
 ## Tab 6 — `CapacityChecks` (Phase 4)
 
-The pre-event capacity-check log. One row per (event, date, partner) ask, created
-by **Run Capacity Check** (`runCapacityCheck()` in `apps-script/Code.gs`) and
-updated by the Google-Form submit trigger (`onCapacityFormSubmit()`). **Internal
-only** — like `Partners` / `EventPartnerLinks`, it is never published and holds no
-data in the public view. Built by `Set up sheets`; `CheckID` auto-fills via the
-`onEdit` trigger; `Status` is a reject-on-invalid dropdown.
+The pre-event capacity-check log. One row per (event, date, partner) ask. Rows are
+created by the **leader reminder** workflow (Section 2) — the daily batch
+**sendLeaderReminders** and the single-event **runCapacityCheck** both upsert one
+row (for the event's **primary** partner) via `upsertCapacityCheck_`; **Find Nearby
+Pantries** upserts one for a chosen backup (`getBackupReminderLink`). All carry
+`Status='sent'`. Rows are updated by the Google-Form submit trigger
+(`onCapacityFormSubmit()`). **Internal only** — like `Partners` /
+`EventPartnerLinks`, it is never published and holds no data in the public view.
+Built by `Set up sheets`; `CheckID` auto-fills via the `onEdit` trigger; `Status`
+is a reject-on-invalid dropdown.
+
+> **No direct partner emails (Section 2).** The system reminds the event's *leader*
+> (resolved from the `Leaders` tab) and hands them a prefilled link to forward; it
+> never emails partners directly. A re-send preserves an existing response —
+> `upsertCapacityCheck_` only refreshes `SentTimestamp`, never wiping a partner's
+> answer.
 
 | # | Column | Type | Req | Validation / notes |
 |---:|---|---|:--:|---|

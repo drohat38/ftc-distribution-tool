@@ -81,6 +81,16 @@ only its own Events tab CSV and is unaffected by this project.
 > `agreement_date`, and `last_verified` are still NEVER published. The gated
 > Apps Script web app below remains the model for the full internal view.
 
+> **Reminder workflow + automation amendment.** The pre-event capacity check is a
+> **leader-reminder** workflow: the system reminds the event's leader (resolved
+> from a new `Leaders` tab) about that event's **primary** partner and hands them a
+> ready-to-forward prefilled form — it never emails partners directly. Two daily
+> Apps Script **time-triggers** run the moving parts unattended: one keeps
+> `Events_Reference` fresh (Refresh Events), one sends the weekly leader reminders
+> (deduped per occurrence). Both are also runnable from the menu. The app records
+> the partner's confirmed number and never predicts or judges adequacy — the leader
+> decides; backups are an always-available, leader-triggered action.
+
 **Where partner data comes from:** Nick's ~50 already-agreed orgs are the first
 records. Additional candidates can be seeded from Google Places (food pantries,
 shelters) and, where available, a local 211 / Open Referral (HSDS) feed. External
@@ -111,7 +121,13 @@ Full column-by-column schema lives in `docs/DATA_MODEL.md`.
 **EventPartnerLinks** (the connection)
 - `EventID` <-> `PartnerID`, **many-to-many** (one event → multiple partners;
   one partner → multiple events)
-- Per-link: `active`, `recurring_slot`, `last_capacity_confirmed`
+- Per-link: `active`, `recurring_slot`, `last_capacity_confirmed`, `is_primary`
+  (exactly one primary partner per event — the rest are backups)
+
+**Leaders**
+- `leader_name`, `leader_email`, `chapter`, `active`, `notes`. An event's `Leader`
+  first name (from the public Events sheet) is matched here to decide who the weekly
+  reminder goes to.
 
 Geocode each partner address once and cache lat/long in the sheet; never
 re-geocode on map load.
@@ -148,13 +164,25 @@ the cold chain.)
    double as compliance documentation: Do you have cold storage? Same-day serve
    or hold-and-distribute? How many meals can you take? Which Saturday, and can
    you commit to a recurring cadence?
-2. **Activate + assign.** Nick toggles a candidate to active and links it to one
-   or more events.
-3. **Pre-event capacity check.** The week before an event, a leader confirms
-   "can you take X this cycle?" with each active partner; responses are logged,
-   with a ranked backup list if the primary can't absorb the full batch.
-4. **View the distribution map.** Event pins, partner pins, and lines connecting
-   each event to its partner(s) — the who-serves-whom picture.
+2. **Activate + assign a primary.** Nick toggles a candidate to active, links it
+   to one or more events, and marks one partner per event as the **primary** (his
+   first/default partner). The rest are backups.
+3. **Weekly leader reminder (replaces emailing partners).** A daily job finds each
+   event whose next occurrence is ~7 days out and emails that **event's leader** a
+   reminder: the event + date, the primary partner's contact, and a ready-to-send
+   message with the partner's **prefilled confirmation form link**. The leader
+   forwards it to the partner; the partner's reply logs to the capacity-check log.
+   The system never emails partners directly, and reminds each leader only once per
+   occurrence.
+4. **Leader decides; backups on demand.** The leader reads the partner's confirmed
+   number and decides if it's enough — **the app never predicts or judges meal
+   counts** (it asks the partner their number, logs it, shows it; no expected total,
+   no shortfall). To line up backups at any time, **Find Nearby Pantries** ranks the
+   nearest candidate + active partners to the event (excluding ones already linked),
+   each with a one-click prefilled backup form link.
+5. **View the distribution map.** Event pins, partner pins (active = colored,
+   candidate = gray, toggleable), and lines connecting each event to its partner(s)
+   — the who-serves-whom picture.
 
 ---
 
@@ -188,6 +216,14 @@ is a hard requirement, not a nice-to-have.
 3. **EventPartnerLinks + private map** — the join, the Apps Script web app,
    event↔partner lines.
 4. **Capacity-check workflow** — pre-event confirmation + backup list.
+5. **Pantry universe + leader-triggered backups** — Seed Pantries (Places) loads
+   the candidate universe; Find Nearby Pantries ranks backups on demand; the check
+   stops judging adequacy (records numbers only).
+6. **Finish the app** — `Leaders` tab + per-event **primary** partner; the
+   capacity check becomes a **weekly leader-reminder** workflow (no direct partner
+   emails) with a ready-to-forward prefilled link; daily **auto-triggers** for
+   Refresh Events and reminders; backups get a prefilled form link too; the public
+   map shows candidates as gray pins with a show/hide toggle.
 
 ---
 

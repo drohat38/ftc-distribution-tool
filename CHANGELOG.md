@@ -6,6 +6,60 @@ project will adopt [Semantic Versioning](https://semver.org/) once it ships.
 
 ## [Unreleased]
 
+### Finish-the-app build — leaders, primary partners, reminder automation
+
+This build completes the monthly cycle: **Nick assigns a primary partner → events
+auto-import → weekly leader reminder → partner form → leader decides → leader-
+triggered backups.** The app records meal numbers and **never predicts or judges**
+them.
+
+**Added**
+
+- **`Leaders` tab** (Section 1; `leader_name`, `leader_email`, `chapter`, `active`,
+  `notes`) built by **Set up sheets** — no auto-UUID (email is the key). Resolver
+  `resolveEventLeaderAndPrimary()` matches an event's `Leader` first-name to a row
+  (flagging no-match / no-email / inactive / ambiguous).
+- **Primary partner** — `is_primary` on `EventPartnerLinks`. The **Link Partner to
+  Event(s)** dialog marks one link per event primary and **demotes** any other
+  primary, so exactly one exists per `EventID`. **View Links** shows a primary badge.
+- **Leader reminder workflow** (Section 2; `sendLeaderReminders`) — for each event
+  ~7 days out, emails the **event's leader** a reminder with the primary partner's
+  contact and a ready-to-forward template containing the partner's **prefilled form
+  link**. Runs from **Send Reminders Now** AND a **daily time-trigger**
+  (`ensureReminderTrigger_`). Per-(event, occurrence) dedupe in ScriptProperties.
+  Saturday-of-month → next-date math (`nextEventOccurrence_`, First…Fifth/Last;
+  skips months with no Nth Saturday). Events that can't be reminded (no primary / no
+  leader email) are surfaced and retried, not deduped.
+- **Daily Refresh Events trigger** (Section 3; `ensureRefreshTrigger_`) so
+  `Events_Reference` stays current unattended; `refreshEvents` is now UI-safe.
+- **Backup form link** (Section 5; `getBackupReminderLink`) — **Find Nearby
+  Pantries** now has a per-result *Get backup form link* button that upserts the
+  (event, partner, next-date) row on demand and returns the prefilled URL + a
+  copyable template, so a leader emails a backup the same way as the primary.
+- **`Events_Reference`** now also mirrors `Saturday` / `Time` / `Leader` (public
+  event fields) to drive the date math and leader resolution.
+- **Public map** (Section 6) — **candidate pantries render as gray pins**; new
+  **Show candidate pantries** legend toggle hides/shows them (and their lines);
+  legend + visible-count badge updated.
+
+**Changed**
+
+- Set up sheets also builds the `Leaders` tab and installs/repairs the two daily
+  triggers. The `FTC` menu gains **Send Reminders Now** and renames the single-event
+  action to **Send Reminder for One Event** (now leader-centric).
+- `upsertCapacityCheck_` preserves an existing partner response on re-send (only
+  refreshes `SentTimestamp`).
+
+**Removed**
+
+- **Direct partner emails.** `runCapacityCheck` no longer emails partners — it now
+  reminds the event's leader (single event, forced). `sendCapacityEmail_` and
+  `getActivePartnersForEvent` deleted; `RunCapacityCheckDialog` rewritten to show
+  the resolved leader + primary partner.
+- **`parseMeals_`** (Section 0) — the last prediction-adjacent symbol; the partner's
+  own stated number is now parsed inline in `onCapacityFormSubmit` (logged as-is, no
+  expected total, no shortfall).
+
 ### Changed — Phase 5: capacity check no longer judges sufficiency
 
 The pre-event capacity check now **records** numbers without judging them. The

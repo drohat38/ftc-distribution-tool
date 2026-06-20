@@ -14,26 +14,54 @@ The two link by `EventID` (stable UUIDs already used by the event map — see
 > internal. It is **never** written to a published CSV and **never** served on a
 > public URL. See [`AGENTS.md`](AGENTS.md) and [`PRD.md`](PRD.md).
 
-## Status
+## Two surfaces
 
-🚧 **Phase 5 — pantry universe + leader-triggered backups.** A separate, private
-`FTC Distribution (Partners)` Google Sheets workbook exists with a bound Apps
-Script project. The `FTC` menu sets up the `Partners`, `EventPartnerLinks`, and
-`CapacityChecks` tabs (headers, dropdowns, auto-UUID) and covers: Add/Edit Partner
-with one-time geocoding (Phase 2b); Refresh Events + Link Partner to Event(s) +
-View Links (Phase 3a); the public distribution map via Rebuild public view
-(Phase 3b); and **Run Capacity Check** / **View Capacity Status** — emailing active
-partners the week before an event and logging Google-Form responses back to
-`CapacityChecks`.
+The tool is **two surfaces over one set of partner data**:
 
-Phase 5 reframes the recommendation as a leader-initiated action and populates the
-universe: the capacity check no longer sets an expected total or judges a shortfall
-(the leader reads the confirmed numbers and decides); **Seed Pantries (Places)**
-bulk-loads food pantries/banks/soup kitchens near each event from the Google Places
-API as unverified `candidate` rows; and **Find Nearby Pantries** ranks the nearest
-candidates + actives to a chosen event (excluding ones already linked), any time.
-See the build phases in [`PRD.md`](PRD.md) §10 and the schema in
-[`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
+1. **The private sheet — the back office.** A separate `FTC Distribution
+   (Partners)` Google Sheets workbook with a bound Apps Script app. This is where
+   the work happens: partners are added/qualified, linked to events, reminded, and
+   maintained. Contact info, agreements, and `last_verified` live here and never
+   leave.
+2. **The public map — the display.** A self-contained `src/index.html` on its own
+   Cloudflare Pages project that reads only the published **non-contact** CSVs. It
+   shows where food goes: event pins, active partner pins (colored by pathway),
+   candidate pantries (gray, toggleable), and the event→partner lines.
+
+## How it works — the monthly cycle
+
+```
+Nick assigns a primary partner  →  events auto-import (daily)  →  weekly leader
+reminder  →  leader forwards the partner a prefilled form  →  partner replies  →
+leader reads the number and decides  →  leader lines up backups (Find Nearby Pantries)
+```
+
+- **Assign.** In **Link Partner to Event(s)**, Nick marks one partner per event as
+  **primary** (his first/default partner); the rest are backups.
+- **Auto-import.** A daily trigger runs **Refresh Events**, mirroring the public
+  Events sheet into `Events_Reference` (with each event's Saturday-of-month and
+  leader).
+- **Remind.** A daily trigger runs **sendLeaderReminders** (also a **Send Reminders
+  Now** menu item). For every event ~7 days out it emails the **event's leader** a
+  reminder with the primary partner's contact and a ready-to-forward message
+  containing the partner's **prefilled confirmation link**. The system never emails
+  partners directly. A dedupe stops a leader being reminded twice for the same date.
+- **Confirm.** The partner submits one reusable Google Form; the response logs back
+  to `CapacityChecks` (yes/no + their own meal number).
+- **Decide.** The leader reads the confirmed number in **View Capacity Status**.
+  **The app never predicts or judges meal counts** — it asks the partner their
+  number, logs it, and shows it. No expected total, no shortfall.
+- **Backups.** Any time, **Find Nearby Pantries** ranks the nearest candidate +
+  active partners to an event (excluding ones already linked), each with a one-click
+  **prefilled backup form link** so the leader reaches out the same way.
+
+The candidate universe is populated by **Seed Pantries (Places)** — bulk-loading
+food pantries/banks/soup kitchens near each event from the Google Places API as
+unverified `candidate` rows (never auto-promoted; `pathway` + `cold_storage` are
+required before a candidate can be activated in **Edit Partner**).
+
+See the schema in [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) and the deploy guide in
+[`docs/PUBLIC_MAP.md`](docs/PUBLIC_MAP.md).
 
 ## Stack
 
@@ -60,15 +88,16 @@ Do **not** introduce Supabase, Airtable, or Salesforce. This is the Tier A build
 ├── CHANGELOG.md           # Keep current with every meaningful change
 ├── apps-script/           # clasp project — Apps Script admin app (bound to the Partners workbook)
 │   ├── appsscript.json    # Manifest: sheets, geocoder/UrlFetch, UI, mail, scriptapp, forms scopes
-│   ├── Code.gs            # Admin logic: setup, Add/Edit Partner, links, public view, capacity check
+│   ├── Code.gs            # Admin logic: setup, Add/Edit Partner, links, leaders, reminders, triggers, public view
 │   ├── AddPartnerDialog.html / EditPartnerDialog.html             # Phase 2b — add/edit + geocode
-│   ├── LinkPartnerDialog.html / ViewLinksDialog.html              # Phase 3a — event↔partner links
-│   ├── RunCapacityCheckDialog.html / ViewCapacityStatusDialog.html# Phase 4 — capacity check
-│   ├── FindPantriesDialog.html                                    # Phase 5 — nearby-pantry recommender
+│   ├── LinkPartnerDialog.html / ViewLinksDialog.html              # Phase 3a — event↔partner links (+ primary)
+│   ├── RunCapacityCheckDialog.html / ViewCapacityStatusDialog.html# Leader reminder (one event) + status
+│   ├── FindPantriesDialog.html                                    # Nearby-pantry recommender (+ backup link)
 │   └── .clasp.json.example# Copy to .clasp.json and add your scriptId
 ├── docs/
-│   ├── DATA_MODEL.md      # Column-by-column schema: Partners, Links, Events, public tabs, CapacityChecks
-│   └── PUBLIC_MAP.md      # Phase 3b deploy guide (published CSVs + Cloudflare Pages)
+│   ├── DATA_MODEL.md      # Column-by-column schema: Partners, Links, Leaders, Events, public tabs, CapacityChecks
+│   ├── PUBLIC_MAP.md      # Phase 3b deploy guide (published CSVs + Cloudflare Pages)
+│   └── SMOKE_TEST.md      # Human smoke-test checklist (run after clasp push)
 ├── reference/
 │   └── events-sample.csv  # Read-only sample of the event-map Events schema
 ├── src/
@@ -105,11 +134,18 @@ clasp push                       # deploy Code.gs + appsscript.json
 ```
 
 Then, in the sheet: **FTC → Set up sheets** to build the `Partners`,
-`EventPartnerLinks`, and `CapacityChecks` tabs. The full `FTC` menu also covers
-Add/Edit Partner, Refresh Events, Link Partner to Event(s), View Links, Run
-Capacity Check, View Capacity Status, Find Nearby Pantries, Seed Pantries
-(Places), and Rebuild public view. To deploy the public map, follow
+`EventPartnerLinks`, `Leaders`, and `CapacityChecks` tabs **and install the daily
+auto-triggers** (Refresh Events + leader reminders). The full `FTC` menu also
+covers Add/Edit Partner, Refresh Events, Link Partner to Event(s) (mark a primary),
+View Links, **Send Reminders Now**, **Send Reminder for One Event**, View Capacity
+Status, Find Nearby Pantries, Seed Pantries (Places), and Rebuild public view.
+Fill the **Leaders** tab (`leader_name`, `leader_email`, `chapter`, `active`) so
+reminders know who to email. To deploy the public map, follow
 [`docs/PUBLIC_MAP.md`](docs/PUBLIC_MAP.md).
+
+> **Triggers need authorization.** Installing the daily time-triggers happens when
+> you run **Set up sheets** from the menu (it requires the ScriptApp scope, which
+> you grant on first run). Re-run Set up sheets any time to repair them.
 
 ### 3. Places API key (for Seed Pantries)
 
