@@ -197,9 +197,15 @@ const FIND_PANTRIES_LIMIT = 20;
 const PLACES_PROPS = {
   API_KEY: 'PLACES_API_KEY',
   RADIUS_MILES: 'PLACES_RADIUS_MILES',
-  MAX_PER_EVENT: 'PLACES_MAX_PER_EVENT'
+  MAX_PER_EVENT: 'PLACES_MAX_PER_EVENT',
+  // Resume cursor: EventIDs already seeded in the current pass (so a big seed that
+  // can't finish in one 6-min execution continues where it left off on re-run).
+  SEEDED_EVENTS: 'PLACES_SEEDED_EVENTS'
 };
 const PLACES_DEFAULTS = { RADIUS_MILES: 15, MAX_PER_EVENT: 20 };
+// Stop searching new events past this wall-clock budget and flush what we have,
+// leaving headroom under Apps Script's ~6-min execution cap. Re-run to continue.
+const PLACES_TIME_BUDGET_MS = 270000; // 4.5 min
 // Search terms run per event (Places Text Search, New); merged + deduped by id.
 const PLACES_QUERIES = ['food pantry', 'food bank', 'soup kitchen'];
 // A candidate within this many miles of an existing partner of the same
@@ -1628,8 +1634,14 @@ function findNearbyPantries(eventId) {
 // the referrer-restricted browser Maps key the public map uses.
 
 /**
- * Seed candidate pantries from Google Places for every geocoded event. Fetches
- * happen outside the document lock (network); rows are appended under the lock.
+ * Seed candidate pantries from Google Places for every geocoded event.
+ *
+ * Resumable + time-bounded so a large run never dies on Apps Script's ~6-min
+ * execution cap: it processes events until PLACES_TIME_BUDGET_MS, flushes the
+ * rows it gathered in ONE batched write, and records which events it finished in
+ * a Script Property (PLACES_SEEDED_EVENTS). Re-run to continue where it left off;
+ * when every event is done the cursor is cleared (a later run re-seeds fresh,
+ * deduped). Fetches happen outside the lock; the batched append takes the lock.
  */
 function seedPantries() {
   const ui = SpreadsheetApp.getUi();
@@ -1663,6 +1675,15 @@ function seedPantries() {
     return;
   }
 
+  // Resume cursor: skip events already finished in this pass. If none remain, the
+  // previous pass completed — start a fresh one.
+  const done = parseIdSet_(props.getProperty(PLACES_PROPS.SEEDED_EVENTS));
+  let remaining = geoEvents.filter(function(e) { return !done[String(e.EventID)]; });
+  if (!remaining.length) {
+    Object.keys(done).forEach(function(k) { delete done[k]; });
+    remaining = geoEvents.slice();
+  }
+
   // Existing partner signatures for dedup (normalized name + coords). Grown as we
   // stage inserts so the same pantry near two events is only added once this run.
   const sigs = readAllPartners_().map(function(p) {
@@ -1670,19 +1691,39 @@ function seedPantries() {
              lat: Number(p.latitude), lng: Number(p.longitude) };
   });
 
-  let added = 0, duplicates = 0, eventsSearched = 0, apiErrors = 0;
+  let duplicates = 0, eventsSearched = 0, apiErrors = 0, lastError = '';
+  let timedOut = false;
   const toAppend = [];
+  const start = Date.now();
 
-  geoEvents.forEach(function(ev) {
+  for (let i = 0; i < remaining.length; i++) {
+    if (Date.now() - start > PLACES_TIME_BUDGET_MS) { timedOut = true; break; }
+    const ev = remaining[i];
     const lat = Number(ev.Latitude), lng = Number(ev.Longitude);
+
     let places;
     try {
       places = placesNearbyPantries_(apiKey, lat, lng, radiusMeters);
     } catch (err) {
       apiErrors++;
-      return;
+      lastError = String(err && err.message ? err.message : err);
+      // A failure before any event has succeeded is almost certainly a key /
+      // billing / API-not-enabled problem — abort loudly instead of grinding
+      // through every event with the same error.
+      if (eventsSearched === 0) {
+        ui.alert('Seed Pantries failed',
+          'The Places API call failed before any event could be searched:\n\n' +
+          lastError + '\n\nCheck that ' + PLACES_PROPS.API_KEY + ' is a valid ' +
+          'Places API (New) key, that billing + the Places API (New) are enabled ' +
+          'on its Google Cloud project, and that the key is NOT HTTP-referrer-' +
+          'restricted.',
+          ui.ButtonSet.OK);
+        return;
+      }
+      continue; // transient — skip this event, leave it out of the cursor to retry
     }
     eventsSearched++;
+    done[String(ev.EventID)] = true;
 
     const ranked = places.map(function(pl) {
       pl._dist = (validLatLng_(pl.lat, pl.lng)) ? haversineMiles_(lat, lng, pl.lat, pl.lng) : Infinity;
@@ -1695,34 +1736,95 @@ function seedPantries() {
       if (isDuplicatePartner_(pl.name, pl.lat, pl.lng, sigs)) { duplicates++; return; }
       toAppend.push(pl);
       sigs.push({ name: normalizeName_(pl.name), lat: pl.lat, lng: pl.lng });
-      added++;
-    });
-  });
-
-  if (toAppend.length) {
-    withLock_(function() {
-      const spec = CONFIG.SHEETS.PARTNERS;
-      const sheet = getOrCreateSheet_(spec.name);
-      ensurePartnerHeaders_(sheet);
-      let nextRow = sheet.getLastRow() + 1;
-      const now = new Date();
-      toAppend.forEach(function(pl) {
-        writePartnerRow_(sheet, nextRow, placeToPartnerDraft_(pl, now));
-        nextRow++;
-      });
     });
   }
 
-  ui.alert('Pantries seeded',
-    added + ' candidate pantr' + (added === 1 ? 'y' : 'ies') + ' added to Partners ' +
+  // Flush everything gathered this run in ONE batched write (per-row writes are
+  // what blew the execution cap before).
+  if (toAppend.length) {
+    withLock_(function() {
+      const sheet = getOrCreateSheet_(CONFIG.SHEETS.PARTNERS.name);
+      ensurePartnerHeaders_(sheet);
+      const now = new Date();
+      appendPartnerRowsBatched_(sheet, toAppend.map(function(pl) {
+        return placeToPartnerDraft_(pl, now);
+      }));
+    });
+  }
+
+  // Persist progress. When the whole set is done, clear the cursor so the next
+  // run starts a fresh pass.
+  const allDone = geoEvents.every(function(e) { return done[String(e.EventID)]; });
+  if (allDone) props.deleteProperty(PLACES_PROPS.SEEDED_EVENTS);
+  else props.setProperty(PLACES_PROPS.SEEDED_EVENTS, Object.keys(done).join(','));
+
+  const seededTotal = Object.keys(done).length;
+  const eventsLeft = geoEvents.length - seededTotal;
+  ui.alert(allDone ? 'Pantries seeded — pass complete' : 'Pantries seeded — more to go',
+    toAppend.length + ' candidate pantr' + (toAppend.length === 1 ? 'y' : 'ies') + ' added this run ' +
     '(partnership_status = candidate, source = places, blank last_verified).\n' +
-    duplicates + ' skipped as duplicates of existing partners.\n' +
-    eventsSearched + ' of ' + geoEvents.length + ' event(s) searched within ' + radiusMiles + ' mi' +
-    (apiErrors ? ' (' + apiErrors + ' event search(es) errored — check the Places key / quota).' : '.') +
+    duplicates + ' skipped as duplicates.\n' +
+    eventsSearched + ' event(s) searched within ' + radiusMiles + ' mi this run' +
+    (apiErrors ? ' · ' + apiErrors + ' errored (' + lastError + ')' : '') + '.\n' +
+    (allDone
+      ? '\nAll ' + geoEvents.length + ' geocoded event(s) are done.'
+      : '\n' + (timedOut ? 'Stopped at the time limit — ' : '') + eventsLeft +
+        ' of ' + geoEvents.length + ' event(s) still to search. Run FTC ▸ Seed ' +
+        'Pantries (Places) again to continue.') +
     '\n\nThese are UNVERIFIED leads. Qualify each via FTC ▸ Edit Partner — set ' +
-    'pathway + cold_storage (required) and confirm the details — before linking or ' +
-    'activating. None were auto-promoted to active.',
+    'pathway + cold_storage (required) — before linking or activating. None were ' +
+    'auto-promoted to active.',
     ui.ButtonSet.OK);
+}
+
+/** Parse a comma-separated id list into a {id: true} set (blank → empty set). */
+function parseIdSet_(raw) {
+  const out = {};
+  String(raw || '').split(',').forEach(function(s) {
+    const id = s.trim();
+    if (id) out[id] = true;
+  });
+  return out;
+}
+
+/**
+ * Append many Partners rows in ONE setValues (plus a few block-validation calls),
+ * instead of a per-row writePartnerRow_ loop — orders of magnitude fewer Sheets
+ * round-trips, which is what kept a large seed under the execution cap. Writes
+ * each draft field into its actual column (by header map), so column order /
+ * extra columns are respected.
+ */
+function appendPartnerRowsBatched_(sheet, drafts) {
+  if (!drafts.length) return;
+  const spec = CONFIG.SHEETS.PARTNERS;
+  const map = headerMap_(sheet);
+  const startRow = sheet.getLastRow() + 1;
+  const width = Math.max(sheet.getLastColumn(), spec.headers.length);
+
+  const values = drafts.map(function(d) {
+    const row = [];
+    for (let c = 0; c < width; c++) row.push('');
+    spec.headers.forEach(function(h) {
+      if (!map[h]) return;
+      const v = d[h];
+      row[map[h] - 1] = (v === undefined || v === null) ? '' : v;
+    });
+    return row;
+  });
+  sheet.getRange(startRow, 1, values.length, width).setValues(values);
+
+  // Block validation for the appended range (one call per dropdown / checkbox col).
+  Object.keys(spec.dropdowns).forEach(function(h) {
+    if (!map[h]) return;
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(spec.dropdowns[h], true)
+      .setAllowInvalid(false)
+      .build();
+    sheet.getRange(startRow, map[h], values.length, 1).setDataValidation(rule);
+  });
+  (spec.checkboxes || []).forEach(function(h) {
+    if (map[h]) sheet.getRange(startRow, map[h], values.length, 1).insertCheckboxes();
+  });
 }
 
 /**

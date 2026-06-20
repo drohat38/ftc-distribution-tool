@@ -55,6 +55,14 @@ computes a shortfall.
     (overrides: `PLACES_RADIUS_MILES`, `PLACES_MAX_PER_EVENT`). NOT the public map's
     referrer-restricted browser key; never hardcoded in source. Reuses the existing
     `script.external_request` scope — no manifest change.
+  - **Resumable + time-bounded** — `seedPantries` now flushes its rows in ONE
+    batched `setValues` (`appendPartnerRowsBatched_`) instead of a per-row
+    `writePartnerRow_` loop (the per-row writes blew Apps Script's ~6-min execution
+    cap on a full event set). It also stops searching new events past
+    `PLACES_TIME_BUDGET_MS` (4.5 min), records finished events in the
+    `PLACES_SEEDED_EVENTS` Script Property, and continues from there on re-run;
+    the cursor clears once every event is done. A first-event API failure aborts
+    loudly (likely a key/billing problem) rather than grinding through every event.
 - **`Partners` schema** — two new trailing columns (DATA_MODEL Tab 1): `source`
   (provenance; `places` for seeded rows) and `hours` (opening hours). Edit Partner
   preserves both (it doesn't manage them). The public view subset is unchanged —
