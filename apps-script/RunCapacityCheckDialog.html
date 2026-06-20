@@ -16,14 +16,12 @@
   .sub{color:var(--gray);font-size:12px;line-height:1.45;margin-bottom:14px}
   .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px}
   .panel-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--orange);margin-bottom:10px}
-  .panel-title .count{float:right;font-size:10px;font-weight:700;color:var(--navy);letter-spacing:.02em;text-transform:none}
   .field{margin-bottom:11px}
   label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray);margin-bottom:4px}
   .req{color:var(--orange)}
   .field-help{font-size:10px;color:var(--gray);margin-top:4px;line-height:1.35}
   input,select,textarea{width:100%;border:1.5px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);font:inherit;padding:9px 10px}
   input:focus,select:focus,textarea:focus{outline:none;border-color:var(--orange)}
-  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .actions{display:flex;gap:8px;margin-top:4px}
   button{font:inherit;cursor:pointer;border:0;border-radius:8px;font-weight:500}
   .btn{padding:10px 13px;background:#fff;border:1.5px solid var(--line);color:var(--ink)}
@@ -31,32 +29,27 @@
   .btn.primary:hover{background:var(--orange-dk);border-color:var(--orange-dk)}
   .btn:disabled{opacity:.55;cursor:default}
 
-  /* Recipient preview list */
-  .plist{max-height:184px;overflow-y:auto;border:1.5px solid var(--line);border-radius:8px;background:#fff}
-  .prow{display:flex;align-items:center;gap:9px;padding:8px 10px;border-bottom:1px solid var(--line-soft)}
-  .prow:last-child{border-bottom:0}
-  .prow .pname{flex:1;font-size:12.5px;color:var(--ink)}
-  .prow .ploc{font-size:11px;color:var(--gray)}
-  .badge{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:4px}
-  .badge.ok{background:#D1FAE5;color:#065F46}
-  .badge.no{background:#FEE2E2;color:#991B1B}
-  .empty{padding:14px;text-align:center;color:var(--gray);font-size:12px}
+  /* Resolved leader / primary preview */
+  .who{border:1.5px solid var(--line);border-radius:8px;background:#fff;padding:10px 11px}
+  .who .role{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray)}
+  .who .name{font-size:13.5px;font-weight:700;color:var(--navy);margin-top:2px}
+  .who .meta{font-size:11.5px;color:var(--ink2);margin-top:2px}
+  .who + .who{margin-top:8px}
+  .flag{margin-top:6px;padding:7px 9px;border-radius:6px;background:#FEF3C7;color:#92400E;font-size:11px;line-height:1.4}
+  .flag.bad{background:#FEE2E2;color:#991B1B}
 
-  .selcount{font-size:11px;color:var(--navy);font-weight:600;margin-top:6px}
   .result{display:none;margin-top:12px;padding:11px 12px;border-radius:8px;font-size:12px;line-height:1.55}
   .result.show{display:block}
   .result.good{background:#D1FAE5;color:#065F46}
   .result.warn{background:#FEF3C7;color:#92400E}
   .result.bad{background:#FEE2E2;color:#991B1B}
-  .result ul{margin:6px 0 0 16px}
-  .result a{color:inherit}
   .notice{padding:12px;border-radius:8px;background:var(--orange-lt);border:1.5px solid #FBCF9C;color:#8a3b00;font-size:12px;line-height:1.5}
   .notice b{display:block;margin-bottom:3px}
 </style>
 </head>
 <body>
-  <h2>Run Pre-Event Capacity Check</h2>
-  <div class="sub">Email each <b>active</b> partner linked to an event to ask whether it can take food the week before, and roughly how many meals. Responses are logged automatically via a short form — you read the numbers and decide. <b>Internal only.</b></div>
+  <h2>Send Reminder for One Event</h2>
+  <div class="sub">Email this event's <b>leader</b> a reminder with their <b>primary partner</b>'s contact and a ready-to-forward message containing the partner's prefilled confirmation link. The partner's reply still logs to the capacity check. <b>Internal only — partners are never emailed directly.</b></div>
 
   <div id="loading" class="notice">Loading events…</div>
 
@@ -65,26 +58,25 @@
       <div class="panel-title">Event &amp; date</div>
       <div class="field">
         <label>Event <span class="req">*</span></label>
-        <select id="event" required onchange="loadPartners()">
+        <select id="event" required onchange="loadPreview()">
           <option value="">Pick an event…</option>
         </select>
       </div>
       <div class="field">
         <label>Event date <span class="req">*</span></label>
         <input type="date" id="eventDate" required>
+        <div class="field-help">Defaults to the event's next occurrence (computed from its Saturday-of-month). Adjust if needed.</div>
       </div>
-      <div class="field-help">Each active partner below is asked whether it can take food on this date, and roughly how many meals. The app records the replies — it doesn't set a target.</div>
     </div>
 
     <div class="panel">
-      <div class="panel-title">Will be emailed <span class="count" id="recCount"></span></div>
-      <div class="plist" id="plist"><div class="empty">Pick an event to see its active partners.</div></div>
-      <div class="selcount" id="recNote"></div>
+      <div class="panel-title">Who gets reminded</div>
+      <div id="preview"><div class="field-help">Pick an event to see its leader and primary partner.</div></div>
     </div>
 
     <div class="actions">
       <button type="button" class="btn" onclick="closeDialog()">Done</button>
-      <button type="submit" class="btn primary" id="runButton">Send capacity check</button>
+      <button type="submit" class="btn primary" id="runButton">Send reminder to leader</button>
     </div>
     <div class="result" id="result"></div>
   </form>
@@ -95,8 +87,6 @@
   </div>
 
 <script>
-let PARTNERS = [];
-
 function canUseAppsScript(){
   return typeof google !== 'undefined' && google.script && google.script.run;
 }
@@ -128,46 +118,51 @@ function render(data){
   });
 }
 
-function loadPartners(){
+function loadPreview(){
   const id = document.getElementById('event').value;
-  const list = document.getElementById('plist');
-  const note = document.getElementById('recNote');
-  const count = document.getElementById('recCount');
-  PARTNERS = [];
-  count.textContent = '';
-  note.textContent = '';
-  if (!id){ list.innerHTML = '<div class="empty">Pick an event to see its active partners.</div>'; return; }
-  list.innerHTML = '<div class="empty">Loading partners…</div>';
+  const box = document.getElementById('preview');
+  document.getElementById('result').className = 'result';
+  if (!id){ box.innerHTML = '<div class="field-help">Pick an event to see its leader and primary partner.</div>'; return; }
+  box.innerHTML = '<div class="field-help">Resolving leader and primary partner…</div>';
   if (!canUseAppsScript()) return;
   google.script.run
-    .withSuccessHandler(renderPartners)
+    .withSuccessHandler(renderPreview)
     .withFailureHandler(function(err){
-      list.innerHTML = '<div class="empty">Could not load: ' + esc(err && err.message ? err.message : err) + '</div>';
+      box.innerHTML = '<div class="flag bad">Could not resolve: ' + esc(err && err.message ? err.message : err) + '</div>';
     })
-    .getActivePartnersForEvent(id);
+    .getLeaderReminderPreview(id);
 }
 
-function renderPartners(data){
-  PARTNERS = data.items || [];
-  const list = document.getElementById('plist');
-  const count = document.getElementById('recCount');
-  const note = document.getElementById('recNote');
-  count.textContent = data.emailable + ' to email';
-  if (!PARTNERS.length){
-    list.innerHTML = '<div class="empty">No <b>active</b> partners are linked to this event. Use <b>FTC ▸ Link Partner to Event(s)</b> first.</div>';
-    note.textContent = '';
-    return;
+function renderPreview(p){
+  const box = document.getElementById('preview');
+  if (!p || !p.found){ box.innerHTML = '<div class="flag bad">Event not found — run Refresh Events.</div>'; return; }
+
+  // Default the date input to the computed next occurrence.
+  if (p.nextDate) document.getElementById('eventDate').value = p.nextDate;
+
+  let html = '';
+  const ld = p.leader || {};
+  html += '<div class="who"><div class="role">Leader (gets the reminder)</div>' +
+    '<div class="name">' + esc(ld.name || (ld.eventLeaderName ? ld.eventLeaderName : '—')) + '</div>' +
+    '<div class="meta">' + (ld.email ? esc(ld.email) : 'no email on file') +
+      (ld.chapter ? ' · ' + esc(ld.chapter) : '') + '</div>' +
+    (ld.flag ? '<div class="flag' + (ld.email ? '' : ' bad') + '">' + esc(ld.flag) + '</div>' : '') +
+    '</div>';
+
+  const pr = p.primary;
+  if (pr){
+    const contact = [pr.contactName, pr.contactPhone, pr.contactEmail].filter(Boolean).join(' · ');
+    html += '<div class="who"><div class="role">Primary partner (leader forwards to)</div>' +
+      '<div class="name">' + esc(pr.name) + '</div>' +
+      '<div class="meta">' + (contact ? esc(contact) : 'no contact on file — add one via Edit Partner') + '</div>' +
+      (pr.found ? '' : '<div class="flag bad">The linked partner record is missing.</div>') +
+      '</div>';
+  } else {
+    html += '<div class="who"><div class="role">Primary partner</div>' +
+      '<div class="name">None set</div>' +
+      '<div class="flag bad">No primary partner is linked to this event. Mark one in FTC ▸ Link Partner to Event(s).</div></div>';
   }
-  list.innerHTML = PARTNERS.map(function(p){
-    const badge = p.stale ? '<span class="badge no">missing record</span>'
-      : (p.hasEmail ? '<span class="badge ok">will email</span>' : '<span class="badge no">no email — skipped</span>');
-    return '<div class="prow"><span class="pname">' + esc(p.name) +
-      (p.location ? ' <span class="ploc">· ' + esc(p.location) + '</span>' : '') +
-      '</span>' + badge + '</div>';
-  }).join('');
-  const skipped = PARTNERS.length - data.emailable;
-  note.textContent = data.emailable + ' partner' + (data.emailable === 1 ? '' : 's') + ' will be emailed' +
-    (skipped ? ' · ' + skipped + ' skipped (no email / missing)' : '') + '.';
+  box.innerHTML = html;
 }
 
 function run(evt){
@@ -181,44 +176,30 @@ function run(evt){
   const btn = document.getElementById('runButton');
   btn.disabled = true;
   btn.textContent = 'Sending…';
-  show('warn', 'Creating the response form (first run only) and sending emails…');
+  show('warn', 'Creating the response form (first run only) and emailing the leader…');
   google.script.run
     .withSuccessHandler(handleResult)
     .withFailureHandler(function(err){
-      show('bad', 'Could not run the check: ' + esc(err && err.message ? err.message : err));
-      btn.disabled = false; btn.textContent = 'Send capacity check';
+      show('bad', 'Could not send: ' + esc(err && err.message ? err.message : err));
+      btn.disabled = false; btn.textContent = 'Send reminder to leader';
     })
     .runCapacityCheck({ eventId: eventId, eventDate: eventDate });
 }
 
 function handleResult(r){
   const btn = document.getElementById('runButton');
-  btn.disabled = false; btn.textContent = 'Send capacity check';
+  btn.disabled = false; btn.textContent = 'Send reminder to leader';
 
-  const kind = r.failed && r.failed.length ? 'warn' : 'good';
+  if (!r.ok){
+    show('bad', '<b>' + esc(r.eventLabel) + '</b> · ' + esc(r.eventDate) + '<br>Not sent — ' + esc(r.reason || 'unknown reason') + '.');
+    return;
+  }
   let html = '<b>' + esc(r.eventLabel) + '</b> · ' + esc(r.eventDate) + '<br>' +
-    (r.sent.length) + ' email' + (r.sent.length === 1 ? '' : 's') + ' sent';
-  if (r.failed && r.failed.length) html += ', ' + r.failed.length + ' failed';
-  if (r.skipped && r.skipped.length) html += ', ' + r.skipped.length + ' skipped';
-  html += '.';
-
-  if (r.sent.length){
-    html += '<ul>' + r.sent.map(function(s){
-      return '<li>' + esc(s.name) + ' → ' + esc(s.email) + '</li>';
-    }).join('') + '</ul>';
-  }
-  if (r.skipped && r.skipped.length){
-    html += '<div style="margin-top:6px"><b>Skipped:</b><ul>' + r.skipped.map(function(s){
-      return '<li>' + esc(s.name) + ' — ' + esc(s.reason) + '</li>';
-    }).join('') + '</ul></div>';
-  }
-  if (r.failed && r.failed.length){
-    html += '<div style="margin-top:6px"><b>Send failed:</b><ul>' + r.failed.map(function(s){
-      return '<li>' + esc(s.name) + ' — ' + esc(s.error) + '</li>';
-    }).join('') + '</ul></div>';
-  }
-  html += '<div style="margin-top:8px">Track replies in <b>FTC ▸ View Capacity Status</b>.</div>';
-  show(kind, html);
+    'Reminder sent to <b>' + esc(r.leaderName) + '</b> (' + esc(r.leaderEmail) + ')' +
+    (r.primaryName ? ', re: ' + esc(r.primaryName) : '') + '.';
+  if (r.leaderFlag) html += '<br><span style="font-size:11px">Note: ' + esc(r.leaderFlag) + '</span>';
+  html += '<div style="margin-top:8px">Track the partner\'s reply in <b>FTC ▸ View Capacity Status</b>.</div>';
+  show('good', html);
 }
 
 if (canUseAppsScript()){
@@ -231,7 +212,7 @@ if (canUseAppsScript()){
     .getRunCapacityCheckData();
 } else {
   document.getElementById('loading').innerHTML =
-    '<b>Preview outside Google Sheets.</b> Open this from the FTC menu → Run Capacity Check.';
+    '<b>Preview outside Google Sheets.</b> Open this from the FTC menu → Send Reminder for One Event.';
 }
 </script>
 </body>

@@ -208,6 +208,19 @@ const CAPACITY_FORM_TITLES = {
 };
 const CAPACITY_TRIGGER_FN = 'onCapacityFormSubmit';
 
+// Section 2 — leader reminder workflow. The system reminds the EVENT'S LEADER
+// (never the partner directly) about a week before each event's next occurrence;
+// the leader forwards the partner a prefilled form link, and the partner's
+// response still logs to CapacityChecks. REMINDER_LEAD_DAYS is the window: an
+// event is reminded when its next occurrence is within this many days. The daily
+// trigger (ensureReminderTrigger_) fires sendLeaderReminders automatically; a
+// per-(event,occurrence) dedupe in ScriptProperties stops a leader being
+// reminded twice for the same date.
+const REMINDER_LEAD_DAYS = 7;
+const REMINDER_TRIGGER_FN = 'sendLeaderReminders';
+const REMINDER_TRIGGER_HOUR = 7;                 // daily, ~7am script timezone
+const REMINDER_PROPS = { SENT: 'LEADER_REMINDERS_SENT' };
+
 // Phase 5 — "Find Nearby Pantries" recommender. How many nearest partners (from
 // the full candidate+active universe) the leader-initiated recommender returns.
 const FIND_PANTRIES_LIMIT = 20;
@@ -249,7 +262,8 @@ function onOpen() {
     .addItem('Link Partner to Event(s)', 'openLinkPartnerDialog')
     .addItem('View Links', 'openViewLinksDialog')
     .addSeparator()
-    .addItem('Run Capacity Check', 'openRunCapacityCheckDialog')
+    .addItem('Send Reminders Now', 'sendLeaderReminders')
+    .addItem('Send Reminder for One Event…', 'openRunCapacityCheckDialog')
     .addItem('View Capacity Status', 'openViewCapacityStatusDialog')
     .addItem('Find Nearby Pantries', 'openFindPantriesDialog')
     .addSeparator()
@@ -272,6 +286,11 @@ function setupSheets() {
     });
     removeDefaultSheetIfEmpty_();
   });
+
+  // Install / repair the daily automation triggers (Sections 2 & 3). Each ensure
+  // is idempotent, so re-running Set up sheets is safe. Installing time triggers
+  // needs the ScriptApp scope, which the user grants by running this from the menu.
+  ensureReminderTrigger_();
 
   SpreadsheetApp.getUi().alert(
     'Sheets ready',
@@ -925,34 +944,41 @@ function writePublicSheet_(spec, rows) {
 }
 
 // ===========================================================================
-// Phase 4 (corrected in Phase 5) — Pre-event capacity check
+// Phase 4 → Section 2 — Pre-event capacity check via LEADER REMINDERS
 // ===========================================================================
 //
-// The week before an event, ask each ACTIVE linked partner whether it can take
-// food and roughly how many meals, and log the structured responses. The app
-// records the numbers; it never sets an expected total or judges sufficiency —
-// the LEADER reads the confirmed numbers and decides if it's enough. Finding more
-// partners is a separate, always-available action ("Find Nearby Pantries"), never
-// gated on a computed shortfall. Uses the INTERNAL contact fields
-// (Partners.contact_email) to reach partners — these never touch the public view
-// (privacy wall; Partners_Public/Links_Public carry no contact or check data).
+// The system NO LONGER emails partners directly. About a week before each event,
+// it reminds the EVENT'S LEADER (resolved from the Leaders tab, Section 1) about
+// that event's PRIMARY partner, and gives the leader a ready-to-send template
+// with the partner's prefilled Google-Form link embedded. The leader forwards it
+// however they reach the partner (email/text/call); the partner's response still
+// logs to CapacityChecks via the form. The app records numbers; it never sets an
+// expected total or judges sufficiency — the LEADER reads the confirmed numbers
+// and decides. Backups are a separate, always-available action ("Find Nearby
+// Pantries"), never gated on a computed shortfall. Contact fields stay INTERNAL
+// (shown to the leader, never published — privacy wall).
 //
 // Flow:
-//   1. "Run Capacity Check" — pick an event and its upcoming date. For each active
-//      linked partner that has a contact email, upsert one CapacityChecks row
-//      (Status='sent') and email each contact (MailApp) a unique Google-Form link
-//      prefilled with that row's CheckID. No expected total, no per-partner split.
-//   2. Responses come back via that ONE reusable Google Form (NOT reply-scanning).
+//   1. sendLeaderReminders() — runs two ways: the "Send Reminders Now" menu item
+//      AND a daily time-trigger (ensureReminderTrigger_). For every non-paused
+//      event whose next occurrence is within REMINDER_LEAD_DAYS, it resolves the
+//      leader + primary partner, upserts ONE CapacityChecks row (Status='sent')
+//      for that primary partner + date, and emails the leader a reminder + forward
+//      template containing the prefilled form link. A per-(event,occurrence)
+//      dedupe stops a leader being reminded twice for the same date.
+//   2. "Send Reminder for One Event…" — runCapacityCheck() does the same for a
+//      single chosen event, on demand (forces a send even if already reminded).
+//   3. Responses come back via that ONE reusable Google Form (NOT reply-scanning).
 //      onCapacityFormSubmit() (an installable trigger) reads the CheckID + Yes/No
 //      + meals and writes Status / ConfirmedMeals / ResponseTimestamp back onto
 //      the matching CapacityChecks row (and stamps the link's
 //      last_capacity_confirmed).
-//   3. "View Capacity Status" — per event+date: each partner's response and the
+//   4. "View Capacity Status" — per event+date: each partner's response and the
 //      confirmed-meals total. No shortfall judgment.
-//   4. "Find Nearby Pantries" (any time) — ranks the full candidate+active partner
+//   5. "Find Nearby Pantries" (any time) — ranks the full candidate+active partner
 //      universe by distance from a chosen event, excluding partners already linked
 //      to it, with each one's pathway, capacity, and contact so the leader can
-//      reach out. See nearestPartnersForEvent_ / findNearbyPantries.
+//      line up backups. See nearestPartnersForEvent_ / findNearbyPantries.
 
 /** Open the Run Capacity Check dialog. */
 function openRunCapacityCheckDialog() {
@@ -982,160 +1008,325 @@ function getRunCapacityCheckData() {
 }
 
 /**
- * The ACTIVE partners linked to an event, for the dialog's "who will be emailed"
- * preview. Flags partners with no contact email (they can't be emailed and will
- * be skipped) and any link pointing at a missing partner record.
+ * Preview for the "Send Reminder for One Event" dialog (Section 2): the event's
+ * resolved leader (who gets the reminder) and its primary partner (who the leader
+ * forwards to), plus the computed next-occurrence date. The leader/primary may be
+ * flagged (no email, no primary set) so the dialog can warn before sending.
+ * Internal-only — the primary partner's contact fields are shown to the operator
+ * but never published.
  */
-function getActivePartnersForEvent(eventId) {
-  const id = String(eventId || '').trim();
-  if (!id) return { items: [], emailable: 0 };
-
-  const partnersById = {};
-  readAllPartners_().forEach(function(p) { partnersById[p.PartnerID] = p; });
-
-  const items = readAllLinks_()
-    .filter(function(l) { return l.EventID === id && isTruthyFlag_(l.active); })
-    .map(function(l) {
-      const p = partnersById[l.PartnerID];
-      return {
-        partnerId: l.PartnerID,
-        name: p ? p.organization_name : ('Unknown partner (' + l.PartnerID + ')'),
-        location: p ? partnerLocation_(p) : '',
-        hasEmail: p ? !!String(p.contact_email || '').trim() : false,
-        capacity: p ? (Number(p.monthly_capacity_meals) || 0) : 0,
-        pathway: p ? String(p.pathway || '').trim() : '',
-        stale: !p
-      };
-    });
-  items.sort(function(a, b) {
-    return String(a.name).toLowerCase() < String(b.name).toLowerCase() ? -1 : 1;
-  });
-  const emailable = items.filter(function(i) { return i.hasEmail && !i.stale; }).length;
-  return { items: items, emailable: emailable };
+function getLeaderReminderPreview(eventId) {
+  const r = resolveEventLeaderAndPrimary(eventId);
+  if (!r.found) return { found: false };
+  const occ = nextEventOccurrence_(r.saturday, todayLocal_());
+  return {
+    found: true,
+    eventLabel: r.eventLabel,
+    saturday: r.saturday,
+    nextDate: occ ? ymdLocal_(occ) : '',
+    leader: r.leader,
+    primary: r.primary
+  };
 }
 
 /**
- * Run the pre-event capacity check for one event + date.
- *
- * payload = { eventId, eventDate:'YYYY-MM-DD' }
- *
- * For each ACTIVE linked partner that has a contact email: upsert a
- * CapacityChecks row keyed by (EventID, PartnerID, EventDate) — keeping the
- * CheckID on a re-run so a resend never duplicates a row — with Status='sent'
- * and a fresh SentTimestamp. There is NO expected total and NO per-partner split
- * (Phase 5): each partner is simply asked whether it can take food and roughly
- * how many meals. Then email each contact a Google-Form link prefilled with that
- * CheckID. Partners with no email are skipped and reported.
- *
- * The form + its submit trigger are created lazily on the first run
- * (ensureCapacityForm_). Emails go out AFTER the sheet lock is released so the
- * document isn't held while MailApp runs.
+ * Send leader reminders for every event whose next occurrence is within
+ * REMINDER_LEAD_DAYS. Runs two ways (Section 2): the "Send Reminders Now" menu
+ * item AND the daily time-trigger (ensureReminderTrigger_) — both call this same
+ * function. In menu (UI) context it shows a summary alert; in trigger context
+ * SpreadsheetApp.getUi() throws and the alert is silently skipped. Deduped so a
+ * leader isn't reminded twice for the same (event, occurrence).
  */
-function runCapacityCheck(payload) {
-  const data = payload || {};
-  const eventId = String(data.eventId || '').trim();
-  const eventDate = String(data.eventDate || '').trim();
+function sendLeaderReminders() {
+  const summary = runLeaderReminders_({ force: false });
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert('Leader reminders', formatReminderSummary_(summary), ui.ButtonSet.OK);
+  } catch (e) { /* time-trigger context — no UI available */ }
+  return summary;
+}
 
-  if (!eventId) throw new Error('Pick an event first.');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) throw new Error('Pick the event date.');
-
-  const ev = readEventsReference_().filter(function(e) { return e.EventID === eventId; })[0];
-  if (!ev) throw new Error('That event is not in the current Events_Reference. Run Refresh Events and try again.');
-  const eventLabel = eventLabel_(ev);
-
-  // Resolve the active linked partners we can actually reach (have an email).
-  const partnersById = {};
-  readAllPartners_().forEach(function(p) { partnersById[p.PartnerID] = p; });
-  const activeLinks = readAllLinks_().filter(function(l) {
-    return l.EventID === eventId && isTruthyFlag_(l.active);
-  });
-
-  const emailable = [];
-  const skipped = [];
-  activeLinks.forEach(function(l) {
-    const p = partnersById[l.PartnerID];
-    if (!p) {
-      skipped.push({ partnerId: l.PartnerID, name: 'Unknown partner (' + l.PartnerID + ')', reason: 'partner record missing' });
-      return;
-    }
-    const email = String(p.contact_email || '').trim();
-    if (!email) {
-      skipped.push({ partnerId: p.PartnerID, name: p.organization_name, reason: 'no contact email on file' });
-      return;
-    }
-    emailable.push({ partner: p, email: email });
-  });
-
-  if (!emailable.length) {
-    throw new Error('No ACTIVE partner linked to this event has a contact email. ' +
-      'Add an email via FTC ▸ Edit Partner, or link an active partner first (FTC ▸ Link Partner to Event(s)).');
+/** Human-readable summary of a reminder run, for the menu alert. */
+function formatReminderSummary_(s) {
+  let msg = s.sent.length + ' reminder' + (s.sent.length === 1 ? '' : 's') +
+    ' sent to leaders for events within ' + s.windowDays + ' days.';
+  if (s.sent.length) {
+    msg += '\n\nSent:\n' + s.sent.map(function(r) {
+      return '• ' + r.eventLabel + ' · ' + r.eventDate + ' → ' + r.leaderName +
+        ' (' + r.sentTo + '), re: ' + r.primaryName;
+    }).join('\n');
   }
+  if (s.alreadyDone.length) {
+    msg += '\n\nAlready reminded this cycle: ' + s.alreadyDone.length + '.';
+  }
+  if (s.needsAttention.length) {
+    msg += '\n\nNeeds attention (NOT sent — will retry once fixed):\n' +
+      s.needsAttention.map(function(r) {
+        return '• ' + r.eventLabel + (r.eventDate ? (' · ' + r.eventDate) : '') + ' — ' + r.reason;
+      }).join('\n');
+  }
+  if (!s.sent.length && !s.needsAttention.length && !s.alreadyDone.length) {
+    msg += '\n\nNo events are within the reminder window right now.';
+  }
+  return msg;
+}
 
-  // Create / reuse the response form + trigger BEFORE taking the lock.
-  const form = ensureCapacityForm_();
+/**
+ * The reminder engine. For each non-paused event whose next occurrence is in the
+ * [0, REMINDER_LEAD_DAYS] window and hasn't been reminded yet (dedupe), resolve
+ * the leader + primary partner, upsert the primary's CapacityChecks row, and
+ * email the leader. Events that can't be reminded (no recognized Saturday, no
+ * primary partner, no leader email) go to `needsAttention` and are NOT deduped,
+ * so they retry on the next run once fixed. `opts.force` bypasses the dedupe.
+ */
+function runLeaderReminders_(opts) {
+  opts = opts || {};
+  const today = todayLocal_();
+  const leadDays = REMINDER_LEAD_DAYS;
+  const events = readEventsReference_();
+  const ctx = {
+    form: ensureCapacityForm_(),
+    leaders: readAllLeaders_(),
+    partnersById: (function() { const m = {}; readAllPartners_().forEach(function(p) { m[p.PartnerID] = p; }); return m; })(),
+    links: readAllLinks_()
+  };
+  const sentMap = getRemindersSent_();
+  pruneRemindersSent_(sentMap, today);
 
-  // Upsert the CapacityChecks rows under the document lock.
-  const recipients = withLock_(function() {
+  const sent = [], needsAttention = [], alreadyDone = [];
+  events.forEach(function(ev) {
+    if (String(ev.Paused || '').trim().toLowerCase() === 'yes') return;
+    const occ = nextEventOccurrence_(ev.Saturday, today);
+    if (!occ) {
+      needsAttention.push({ eventLabel: eventLabel_(ev), eventDate: '',
+        reason: 'Unrecognized "Saturday" value ("' + String(ev.Saturday || '') + '") — can\'t compute the next date.' });
+      return;
+    }
+    const daysUntil = dayDiff_(today, occ);
+    if (daysUntil < 0 || daysUntil > leadDays) return; // outside the reminder window
+    const occYmd = ymdLocal_(occ);
+    const key = ev.EventID + '|' + occYmd;
+    if (!opts.force && sentMap[key]) { alreadyDone.push({ eventLabel: eventLabel_(ev), eventDate: occYmd }); return; }
+
+    const res = remindLeaderForEvent_(ev, occYmd, ctx);
+    if (res.ok) {
+      sent.push(res);
+      sentMap[key] = occYmd;              // dedupe marker (value = date, for pruning)
+    } else {
+      needsAttention.push({ eventLabel: res.eventLabel, eventDate: occYmd, reason: res.reason });
+    }
+  });
+
+  saveRemindersSent_(sentMap);
+  return { sent: sent, needsAttention: needsAttention, alreadyDone: alreadyDone, windowDays: leadDays };
+}
+
+/**
+ * Remind one event's leader about its primary partner for a given occurrence date.
+ * Resolves leader + primary (Section 1), upserts the primary partner's
+ * CapacityChecks row (Status='sent'; preserves an existing response), builds the
+ * prefilled form link keyed to that CheckID, and emails the leader. Returns
+ * { ok, reason, ... }. ok=false (with a reason) when there's no primary partner
+ * or no leader email — the caller surfaces it and does not dedupe it.
+ */
+function remindLeaderForEvent_(ev, occYmd, ctx) {
+  const leader = resolveEventLeader_(ev, ctx.leaders);
+  const primary = resolveEventPrimaryPartner_(ev.EventID, ctx.partnersById, ctx.links);
+  const out = {
+    eventId: ev.EventID, eventLabel: eventLabel_(ev), eventDate: occYmd,
+    leaderName: leader.name, leaderEmail: leader.email, leaderFlag: leader.flag,
+    primaryName: primary ? primary.name : '', ok: false, reason: '', sentTo: ''
+  };
+  if (!primary) {
+    out.reason = 'No primary partner is linked to this event. Mark one in FTC ▸ Link Partner to Event(s).';
+    return out;
+  }
+  if (!leader.email) {
+    out.reason = leader.flag || 'No leader email on file — add the leader on the Leaders tab.';
+    return out;
+  }
+  const checkId = upsertCapacityCheck_(ev.EventID, primary.partnerId, occYmd);
+  const url = capacityPrefilledUrl_(ctx.form, checkId);
+  sendLeaderReminderEmail_(leader, ev, occYmd, primary, url);
+  out.ok = true;
+  out.checkId = checkId;
+  out.sentTo = leader.email;
+  return out;
+}
+
+/**
+ * Upsert ONE CapacityChecks row keyed by (EventID, PartnerID, EventDate), under
+ * the document lock. Keeps the CheckID on a re-run so a resend never duplicates a
+ * row, and PRESERVES an existing response (ConfirmedMeals / Status /
+ * ResponseTimestamp) so re-sending a reminder never wipes a partner's answer —
+ * only SentTimestamp is refreshed. Returns the CheckID. RequestedMeals stays
+ * blank (no expected total — Section 0).
+ */
+function upsertCapacityCheck_(eventId, partnerId, eventDate) {
+  return withLock_(function() {
     const spec = CONFIG.SHEETS.CAPACITY;
     const sheet = getOrCreateSheet_(spec.name);
     ensureCapacityHeaders_(sheet);
     const map = headerMap_(sheet);
 
-    const index = {};
-    readAllCapacityChecks_(sheet, map).forEach(function(r) {
-      index[r.EventID + '|' + r.PartnerID + '|' + ymd_(r.EventDate)] = r;
-    });
+    const prior = readAllCapacityChecks_(sheet, map).filter(function(r) {
+      return String(r.EventID || '').trim() === eventId &&
+             String(r.PartnerID || '').trim() === partnerId &&
+             ymd_(r.EventDate) === eventDate;
+    })[0];
 
-    let nextRow = sheet.getLastRow() + 1;
-    const out = [];
-    emailable.forEach(function(rec) {
-      const p = rec.partner;
-      const prior = index[eventId + '|' + p.PartnerID + '|' + eventDate];
-      const checkId = (prior && String(prior.CheckID || '').trim()) || Utilities.getUuid();
-      const obj = {
-        CheckID: checkId,
-        EventID: eventId,
-        PartnerID: p.PartnerID,
-        EventDate: eventDate,
-        RequestedMeals: '',          // no expected total to split (Phase 5)
-        ConfirmedMeals: '',          // reset — this is a fresh ask
-        Status: 'sent',
-        SentTimestamp: new Date(),
-        ResponseTimestamp: ''        // reset — awaiting a new response
-      };
-      const writeRow = prior ? prior._row : nextRow;
-      writeCapacityRow_(sheet, writeRow, obj, map);
-      if (!prior) nextRow++;
-      out.push({
-        checkId: checkId, email: rec.email,
-        contactName: String(p.contact_name || '').trim(),
-        orgName: p.organization_name
-      });
-    });
-    return out;
+    const responded = prior && String(prior.ResponseTimestamp || '').trim();
+    const checkId = (prior && String(prior.CheckID || '').trim()) || Utilities.getUuid();
+    const obj = {
+      CheckID: checkId,
+      EventID: eventId,
+      PartnerID: partnerId,
+      EventDate: eventDate,
+      RequestedMeals: '',                                  // no expected total (Section 0)
+      ConfirmedMeals: responded ? prior.ConfirmedMeals : '',
+      Status: responded ? prior.Status : 'sent',
+      SentTimestamp: new Date(),                           // always refresh "last nudged"
+      ResponseTimestamp: responded ? prior.ResponseTimestamp : ''
+    };
+    writeCapacityRow_(sheet, prior ? prior._row : sheet.getLastRow() + 1, obj, map);
+    return checkId;
   });
+}
 
-  // Send emails outside the lock — each carries a prefilled link keyed by CheckID.
-  const sent = [];
-  const failed = [];
-  recipients.forEach(function(r) {
-    try {
-      const url = capacityPrefilledUrl_(form, r.checkId);
-      sendCapacityEmail_(r.email, r.contactName, r.orgName, eventLabel, eventDate, url);
-      sent.push({ name: r.orgName, email: r.email });
-    } catch (err) {
-      failed.push({ name: r.orgName, email: r.email, error: String(err && err.message ? err.message : err) });
-    }
-  });
+/**
+ * Email the EVENT'S LEADER (Section 2): which event + date, their primary
+ * partner's name + contact, and a ready-to-send template the leader can paste/
+ * forward to that partner — with the partner's PREFILLED form link embedded so
+ * the partner's response still logs to CapacityChecks. Uses the INTERNAL contact
+ * fields (shown to the leader only; never published). MailApp, plain + branded
+ * HTML.
+ */
+function sendLeaderReminderEmail_(leader, ev, dateYmd, primary, url) {
+  const label = eventLabel_(ev);
+  const time = String(ev.Time || '').trim();
+  const leaderFirst = (String(leader.name || '').split(/\s+/)[0]) || 'there';
+  const org = primary.name || 'your distribution partner';
+  const partnerContactName = primary.contactName || 'there';
+  const subject = 'Feed the City reminder — confirm ' + label + ' (' + dateYmd + ')';
+
+  const contactBits = [];
+  if (primary.contactName) contactBits.push(primary.contactName);
+  if (primary.contactPhone) contactBits.push(primary.contactPhone);
+  if (primary.contactEmail) contactBits.push(primary.contactEmail);
+  const contactLine = contactBits.length ? contactBits.join(' · ') : 'No contact on file — add one via FTC ▸ Edit Partner.';
+
+  // The template the leader forwards to the partner (carries the prefilled link).
+  const template =
+    'Hi ' + partnerContactName + ',\n\n' +
+    'This is ' + (leader.name || 'your Feed the City chapter leader') + ' with Feed the City. ' +
+    'We have an upcoming food distribution on ' + dateYmd + (time ? (' (' + time + ')') : '') +
+    ' — ' + label + '. Can ' + org + ' take food this cycle, and roughly how many meals?\n\n' +
+    'Please let us know here (about 10 seconds): ' + url + '\n\n' +
+    'Thank you so much!\n' + (leader.name || 'Feed the City');
+
+  const plain = 'Hi ' + leaderFirst + ',\n\n' +
+    'Reminder: ' + label + ' is coming up on ' + dateYmd + (time ? (' (' + time + ')') : '') + '.\n\n' +
+    'Your primary distribution partner is ' + org + '.\n' +
+    'Contact: ' + contactLine + '\n\n' +
+    'Please reach out to confirm they can take this cycle\'s food. You can copy the ' +
+    'message below straight to them — it has their personal confirmation link, which ' +
+    'logs their answer back to the team automatically:\n\n' +
+    '----- copy below this line -----\n' + template + '\n----- end -----\n\n' +
+    'Need backups? Use FTC ▸ Find Nearby Pantries in the Partners sheet.\n\n' +
+    'Thank you,\nFeed the City';
+
+  const html =
+    '<div style="font-family:Roboto,Arial,sans-serif;color:#1A1A1A;max-width:560px;line-height:1.5">' +
+      '<p style="margin:0 0 12px">Hi ' + escHtml_(leaderFirst) + ',</p>' +
+      '<p style="margin:0 0 12px">Reminder: <b>' + escHtml_(label) + '</b> is coming up on <b>' +
+        escHtml_(dateYmd) + '</b>' + (time ? ' (' + escHtml_(time) + ')' : '') + '.</p>' +
+      '<div style="background:#FFF1E6;border:1px solid #FBCF9C;border-radius:8px;padding:12px 14px;margin:0 0 14px">' +
+        '<div style="font-size:12px;font-weight:700;color:#8a3b00;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px">Primary partner</div>' +
+        '<div style="font-size:15px;font-weight:700;color:#003366">' + escHtml_(org) + '</div>' +
+        '<div style="font-size:12.5px;color:#3c4043;margin-top:3px">' + escHtml_(contactLine) + '</div>' +
+      '</div>' +
+      '<p style="margin:0 0 8px">Please reach out to confirm they can take this cycle\'s food. ' +
+        '<b>Copy the message below</b> straight to them — it has their personal confirmation link, ' +
+        'which logs their answer back to the team automatically:</p>' +
+      '<pre style="white-space:pre-wrap;background:#f6f8fa;border:1px solid #E5E7EB;border-radius:8px;' +
+        'padding:12px 14px;font-family:Roboto,Arial,sans-serif;font-size:12.5px;color:#1A1A1A;margin:0 0 14px">' +
+        escHtml_(template) + '</pre>' +
+      '<p style="margin:0 0 4px"><a href="' + escHtml_(url) + '" style="background:#FF6500;color:#fff;' +
+        'text-decoration:none;font-weight:700;padding:10px 16px;border-radius:8px;display:inline-block">' +
+        'Open the partner form →</a></p>' +
+      '<p style="margin:14px 0 0;font-size:12px;color:#6B7280">Need backups? Use ' +
+        '<b>FTC ▸ Find Nearby Pantries</b> in the Partners sheet.</p>' +
+      '<p style="margin:14px 0 0">Thank you,<br><b style="color:#003366">Feed the City</b></p>' +
+    '</div>';
+
+  MailApp.sendEmail({ to: leader.email, subject: subject, body: plain, htmlBody: html, name: 'Feed the City' });
+}
+
+/**
+ * "Send Reminder for One Event…" (Section 2) — send the leader reminder for a
+ * single chosen event on demand. Same engine as the batch, but FORCES a send even
+ * if the event was already reminded this cycle (and records the dedupe marker so
+ * the daily batch won't re-send). Defaults the date to the computed next
+ * occurrence when none is supplied.
+ *
+ * payload = { eventId, eventDate?:'YYYY-MM-DD' }
+ */
+function runCapacityCheck(payload) {
+  const data = payload || {};
+  const eventId = String(data.eventId || '').trim();
+  let eventDate = String(data.eventDate || '').trim();
+  if (!eventId) throw new Error('Pick an event first.');
+
+  const ev = readEventsReference_().filter(function(e) { return e.EventID === eventId; })[0];
+  if (!ev) throw new Error('That event is not in the current Events_Reference. Run Refresh Events and try again.');
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+    const occ = nextEventOccurrence_(ev.Saturday, todayLocal_());
+    eventDate = occ ? ymdLocal_(occ) : '';
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+    throw new Error('Pick the event date (couldn\'t compute it from the Saturday-of-month).');
+  }
+
+  const ctx = {
+    form: ensureCapacityForm_(),
+    leaders: readAllLeaders_(),
+    partnersById: (function() { const m = {}; readAllPartners_().forEach(function(p) { m[p.PartnerID] = p; }); return m; })(),
+    links: readAllLinks_()
+  };
+  const res = remindLeaderForEvent_(ev, eventDate, ctx);
+
+  if (res.ok) {
+    const map = getRemindersSent_();
+    map[eventId + '|' + eventDate] = eventDate;   // keep the daily batch from re-sending
+    saveRemindersSent_(map);
+  }
 
   return {
-    eventLabel: eventLabel,
+    eventLabel: eventLabel_(ev),
     eventDate: eventDate,
-    sent: sent,
-    failed: failed,
-    skipped: skipped,
-    formUrl: PropertiesService.getDocumentProperties().getProperty(CAPACITY_PROPS.PUBLISHED_URL) || form.getPublishedUrl()
+    ok: res.ok,
+    reason: res.reason,
+    leaderName: res.leaderName,
+    leaderEmail: res.sentTo,
+    leaderFlag: res.leaderFlag,
+    primaryName: res.primaryName
   };
+}
+
+/**
+ * Install the daily leader-reminder time-trigger if it isn't already there
+ * (Section 2). Idempotent — safe to call from Set up sheets repeatedly. Returns
+ * true if it created a new trigger.
+ */
+function ensureReminderTrigger_() {
+  const have = ScriptApp.getProjectTriggers().some(function(t) {
+    return t.getHandlerFunction() === REMINDER_TRIGGER_FN && t.getEventType() === ScriptApp.EventType.CLOCK;
+  });
+  if (!have) {
+    ScriptApp.newTrigger(REMINDER_TRIGGER_FN).timeBased().everyDays(1).atHour(REMINDER_TRIGGER_HOUR).create();
+  }
+  return !have;
 }
 
 /**
@@ -1412,44 +1603,110 @@ function touchLinkCapacityConfirmed_(eventId, partnerId) {
   sheet.getRange(row._row, map.last_capacity_confirmed).setValue(today);
 }
 
+// ---------------------------------------------------------------------------
+// Section 2 — reminder date logic + dedupe (the fiddly Saturday-of-month math)
+// ---------------------------------------------------------------------------
+
+/** Today at local midnight (script timezone), for whole-day comparisons. */
+function todayLocal_() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+/** A local Date → 'YYYY-MM-DD'. */
+function ymdLocal_(d) {
+  const m = String(d.getMonth() + 1);
+  const day = String(d.getDate());
+  return d.getFullYear() + '-' + (m.length < 2 ? '0' + m : m) + '-' + (day.length < 2 ? '0' + day : day);
+}
+
+/** Whole days from a → b (both local-midnight Dates). Rounded to absorb DST. */
+function dayDiff_(a, b) {
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
 /**
- * Email a partner contact the capacity ask + their unique form link (MailApp).
- * Internal use of the private contact_email — never published. Sends a plain +
- * branded HTML body.
+ * Parse an event's "Saturday" field into an ordinal: 1..5 for First..Fifth (also
+ * "1st".."5th" / a bare digit) or the string 'last' for "Last". null if blank /
+ * unrecognized.
  */
-function sendCapacityEmail_(to, contactName, orgName, eventLabel, eventDate, url) {
-  const greeting = contactName ? ('Hi ' + contactName + ',') : 'Hi there,';
-  const org = orgName || 'your organization';
-  const subject = 'Feed the City — can you take food on ' + eventDate + '?';
+function parseSaturdayOrdinal_(s) {
+  const t = String(s || '').trim().toLowerCase();
+  if (!t) return null;
+  const words = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5 };
+  if (words[t] !== undefined) return words[t];
+  if (t === 'last') return 'last';
+  const m = t.match(/^([1-5])(st|nd|rd|th)?$/);
+  if (m) return Number(m[1]);
+  return null;
+}
 
-  const plain = greeting + '\n\n' +
-    'Feed the City has an upcoming distribution on ' + eventDate +
-    (eventLabel ? ' (' + eventLabel + ')' : '') + '.\n\n' +
-    'Can ' + org + ' take food this cycle, and roughly how many meals?\n\n' +
-    'Please let us know here (takes about 10 seconds):\n' + url + '\n\n' +
-    'This link is unique to your organization — please don\'t forward it.\n\n' +
-    'Thank you,\nFeed the City';
+/**
+ * The date of the Nth Saturday (n = 1..5) of a month, or null if that month has
+ * no Nth Saturday (e.g. no 5th Saturday). month0 is 0-based (Jan = 0).
+ */
+function nthSaturdayOfMonth_(year, month0, n) {
+  const firstDow = new Date(year, month0, 1).getDay();   // 0 Sun .. 6 Sat
+  const firstSat = 1 + ((6 - firstDow + 7) % 7);          // date (1..7) of the first Saturday
+  const date = firstSat + (n - 1) * 7;
+  const d = new Date(year, month0, date);
+  return d.getMonth() === month0 ? d : null;             // overflowed the month → no Nth Saturday
+}
 
-  const html =
-    '<div style="font-family:Roboto,Arial,sans-serif;color:#1A1A1A;max-width:520px;line-height:1.5">' +
-      '<p style="margin:0 0 12px">' + escHtml_(greeting) + '</p>' +
-      '<p style="margin:0 0 12px">Feed the City has an upcoming distribution on <b>' + escHtml_(eventDate) + '</b>' +
-        (eventLabel ? ' (' + escHtml_(eventLabel) + ')' : '') + '.</p>' +
-      '<p style="margin:0 0 16px">Can <b>' + escHtml_(org) + '</b> take food this cycle, and ' +
-        'roughly <b>how many meals</b>?</p>' +
-      '<p style="margin:0 0 20px">' +
-        '<a href="' + escHtml_(url) + '" style="background:#FF6500;color:#fff;text-decoration:none;' +
-        'font-weight:700;padding:11px 18px;border-radius:8px;display:inline-block">Confirm capacity →</a>' +
-      '</p>' +
-      '<p style="margin:0 0 4px;font-size:12px;color:#6B7280">This link is unique to your organization — please don\'t forward it.</p>' +
-      '<p style="margin:16px 0 0">Thank you,<br><b style="color:#003366">Feed the City</b></p>' +
-    '</div>';
+/** The date of the LAST Saturday of a month. */
+function lastSaturdayOfMonth_(year, month0) {
+  const last = new Date(year, month0 + 1, 0);             // last day of the month
+  const date = last.getDate() - ((last.getDay() - 6 + 7) % 7);
+  return new Date(year, month0, date);
+}
 
-  MailApp.sendEmail({ to: to, subject: subject, body: plain, htmlBody: html, name: 'Feed the City' });
+/**
+ * The next occurrence (>= fromDate) of an event given its "Saturday of the month"
+ * field. Walks this month and forward up to 14 months, so it correctly skips a
+ * month that has no Nth Saturday (e.g. a 5th-Saturday event in a 4-Saturday
+ * month) and rolls into next month when this month's Saturday already passed.
+ * Returns a local-midnight Date, or null if the field is unrecognized.
+ *
+ * Assumptions (documented): the public Events sheet's `Saturday` is one of
+ * First/Second/Third/Fourth/Fifth/Last; events recur monthly on that Saturday.
+ */
+function nextEventOccurrence_(saturdayField, fromDate) {
+  const ord = parseSaturdayOrdinal_(saturdayField);
+  if (ord === null) return null;
+  const base = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+  for (let i = 0; i < 14; i++) {
+    const ym = base.getFullYear() * 12 + base.getMonth() + i;
+    const y = Math.floor(ym / 12);
+    const m = ym % 12;
+    const occ = (ord === 'last') ? lastSaturdayOfMonth_(y, m) : nthSaturdayOfMonth_(y, m, ord);
+    if (occ && occ.getTime() >= base.getTime()) return occ;
+  }
+  return null;
+}
+
+/** The reminder dedupe map {EventID|YYYY-MM-DD: 'YYYY-MM-DD'} from ScriptProperties. */
+function getRemindersSent_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(REMINDER_PROPS.SENT);
+  if (!raw) return {};
+  try { const o = JSON.parse(raw); return (o && typeof o === 'object') ? o : {}; } catch (e) { return {}; }
+}
+
+/** Persist the reminder dedupe map. */
+function saveRemindersSent_(map) {
+  PropertiesService.getScriptProperties().setProperty(REMINDER_PROPS.SENT, JSON.stringify(map || {}));
+}
+
+/** Drop dedupe keys whose occurrence date is in the past (keeps the store small). */
+function pruneRemindersSent_(map, today) {
+  const cutoff = ymdLocal_(today);
+  Object.keys(map).forEach(function(k) {
+    const d = String(map[k] || '');
+    if (d && d < cutoff) delete map[k];   // string compare works for YYYY-MM-DD
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Phase 4 — capacity helpers
+// Phase 4 / Section 5 — capacity + recommender helpers
 // ---------------------------------------------------------------------------
 
 /**
