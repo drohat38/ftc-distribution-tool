@@ -221,6 +221,12 @@ const REMINDER_TRIGGER_FN = 'sendLeaderReminders';
 const REMINDER_TRIGGER_HOUR = 7;                 // daily, ~7am script timezone
 const REMINDER_PROPS = { SENT: 'LEADER_REMINDERS_SENT' };
 
+// Section 3 — auto-refresh the Events_Reference mirror daily so it stays current
+// without anyone clicking (ensureRefreshTrigger_). Fires before the reminder
+// trigger (hour 5 vs 7) so reminders run against fresh events.
+const REFRESH_TRIGGER_FN = 'refreshEvents';
+const REFRESH_TRIGGER_HOUR = 5;
+
 // Phase 5 — "Find Nearby Pantries" recommender. How many nearest partners (from
 // the full candidate+active universe) the leader-initiated recommender returns.
 const FIND_PANTRIES_LIMIT = 20;
@@ -290,6 +296,7 @@ function setupSheets() {
   // Install / repair the daily automation triggers (Sections 2 & 3). Each ensure
   // is idempotent, so re-running Set up sheets is safe. Installing time triggers
   // needs the ScriptApp scope, which the user grants by running this from the menu.
+  ensureRefreshTrigger_();
   ensureReminderTrigger_();
 
   SpreadsheetApp.getUi().alert(
@@ -480,8 +487,10 @@ function getPartnerForEdit(rowNumber) {
  * with no EventID are skipped (they can't be joined to).
  */
 function refreshEvents() {
-  const ui = SpreadsheetApp.getUi();
-  let result;
+  // Runs from the menu AND from the daily time-trigger (Section 3). Do the work
+  // first, then give UI feedback only if a UI is available — getUi() throws in
+  // trigger context, so a failed refresh there surfaces in the execution log.
+  let result = null, error = null;
   try {
     result = withLock_(function() {
       const rows = fetchEventsCsv_();
@@ -514,10 +523,20 @@ function refreshEvents() {
       return { count: out.length, skipped: skipped };
     });
   } catch (err) {
-    ui.alert('Refresh Events failed', String(err && err.message ? err.message : err), ui.ButtonSet.OK);
-    return;
+    error = err;
   }
 
+  let ui = null;
+  try { ui = SpreadsheetApp.getUi(); } catch (e) { ui = null; }
+  if (!ui) {                       // time-trigger context — no dialogs
+    if (error) throw error;        // let the failed run show in the execution log
+    return result;
+  }
+
+  if (error) {
+    ui.alert('Refresh Events failed', String(error && error.message ? error.message : error), ui.ButtonSet.OK);
+    return;
+  }
   ui.alert(
     'Events refreshed',
     'Loaded ' + result.count + ' event' + (result.count === 1 ? '' : 's') +
@@ -527,6 +546,7 @@ function refreshEvents() {
     'Refresh Events to update. Now use "Link Partner to Event(s)" to connect partners.',
     ui.ButtonSet.OK
   );
+  return result;
 }
 
 /**
@@ -1325,6 +1345,22 @@ function ensureReminderTrigger_() {
   });
   if (!have) {
     ScriptApp.newTrigger(REMINDER_TRIGGER_FN).timeBased().everyDays(1).atHour(REMINDER_TRIGGER_HOUR).create();
+  }
+  return !have;
+}
+
+/**
+ * Install the daily Refresh Events time-trigger if it isn't already there
+ * (Section 3) so Events_Reference stays current without anyone clicking. The
+ * manual FTC ▸ Refresh Events menu item still works too. Idempotent. Returns true
+ * if it created a new trigger.
+ */
+function ensureRefreshTrigger_() {
+  const have = ScriptApp.getProjectTriggers().some(function(t) {
+    return t.getHandlerFunction() === REFRESH_TRIGGER_FN && t.getEventType() === ScriptApp.EventType.CLOCK;
+  });
+  if (!have) {
+    ScriptApp.newTrigger(REFRESH_TRIGGER_FN).timeBased().everyDays(1).atHour(REFRESH_TRIGGER_HOUR).create();
   }
   return !have;
 }
