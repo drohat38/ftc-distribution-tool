@@ -1,0 +1,24 @@
+{
+  "name": "ftc-distribution-app",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "FTC Distribution Matcher — match meal-packing events to partner orgs that can receive them (public-safe demo).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}

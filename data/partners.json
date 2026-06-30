@@ -1,0 +1,1592 @@
+{
+  "_meta": {
+    "mode": "fallback",
+    "source": "sample-fallback (NOT real, NOT OpenStreetMap)",
+    "reason": "Overpass API was unreachable from this environment after retries + mirror.",
+    "license": "n/a — synthetic sample data",
+    "regions": [
+      "dfw",
+      "austin",
+      "houston",
+      "denver"
+    ],
+    "count": 48,
+    "note": "Re-run `node scripts/fetch-partners.mjs` from a normal network to replace this with real OpenStreetMap data."
+  },
+  "partners": [
+    {
+      "id": "sample/dfw/0",
+      "name": "Hillcrest Family Shelter",
+      "type": "shelter",
+      "lat": 32.870371,
+      "lon": -96.515045,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 180,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/1",
+      "name": "Crossroads Community Center",
+      "type": "community_centre",
+      "lat": 32.74889,
+      "lon": -96.311993,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 130,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/2",
+      "name": "Sunrise Food Bank",
+      "type": "food_bank",
+      "lat": 32.61897,
+      "lon": -97.248177,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 1070,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/3",
+      "name": "Prairie Food Pantry",
+      "type": "food_pantry",
+      "lat": 32.878808,
+      "lon": -96.981432,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 380,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/4",
+      "name": "Garland Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 32.632304,
+      "lon": -97.419033,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 220,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/5",
+      "name": "Trinity Family Shelter",
+      "type": "shelter",
+      "lat": 32.586082,
+      "lon": -96.859768,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 230,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/6",
+      "name": "Hillcrest Community Center",
+      "type": "community_centre",
+      "lat": 32.96754,
+      "lon": -96.409872,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 110,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/7",
+      "name": "Crossroads Food Bank",
+      "type": "food_bank",
+      "lat": 33.100307,
+      "lon": -96.521898,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 630,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/8",
+      "name": "Sunrise Food Pantry",
+      "type": "food_pantry",
+      "lat": 32.956385,
+      "lon": -96.889859,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 360,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/9",
+      "name": "Prairie Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 33.03538,
+      "lon": -97.160674,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 250,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/10",
+      "name": "Garland Family Shelter",
+      "type": "shelter",
+      "lat": 32.602807,
+      "lon": -97.136195,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 210,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/dfw/11",
+      "name": "Trinity Community Center",
+      "type": "community_centre",
+      "lat": 32.707992,
+      "lon": -96.372982,
+      "address": "Dallas–Fort Worth metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 110,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/0",
+      "name": "Crossroads Food Pantry",
+      "type": "food_pantry",
+      "lat": 30.50302,
+      "lon": -97.891535,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 440,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/1",
+      "name": "Sunrise Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 30.255216,
+      "lon": -97.859489,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 220,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/2",
+      "name": "Prairie Family Shelter",
+      "type": "shelter",
+      "lat": 30.377553,
+      "lon": -97.868116,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 220,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/3",
+      "name": "Garland Community Center",
+      "type": "community_centre",
+      "lat": 30.179956,
+      "lon": -97.901873,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 130,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/4",
+      "name": "Trinity Food Bank",
+      "type": "food_bank",
+      "lat": 30.356864,
+      "lon": -97.65213,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 1010,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/5",
+      "name": "Hillcrest Food Pantry",
+      "type": "food_pantry",
+      "lat": 30.392804,
+      "lon": -97.897438,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 400,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/6",
+      "name": "Crossroads Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 30.219578,
+      "lon": -97.627866,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 230,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/7",
+      "name": "Sunrise Family Shelter",
+      "type": "shelter",
+      "lat": 30.408279,
+      "lon": -97.911745,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 130,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/8",
+      "name": "Prairie Community Center",
+      "type": "community_centre",
+      "lat": 30.505476,
+      "lon": -97.826559,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 150,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/9",
+      "name": "Garland Food Bank",
+      "type": "food_bank",
+      "lat": 30.431202,
+      "lon": -97.826641,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 750,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/10",
+      "name": "Trinity Food Pantry",
+      "type": "food_pantry",
+      "lat": 30.11553,
+      "lon": -97.598958,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 470,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "dry"
+      ],
+      "openDays": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/austin/11",
+      "name": "Hillcrest Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 30.199364,
+      "lon": -97.565113,
+      "address": "Austin metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 380,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/0",
+      "name": "Northgate Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 30.078515,
+      "lon": -95.196313,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 310,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/1",
+      "name": "Cedar Family Shelter",
+      "type": "shelter",
+      "lat": 29.948567,
+      "lon": -95.295633,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 140,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/2",
+      "name": "Magnolia Community Center",
+      "type": "community_centre",
+      "lat": 29.706868,
+      "lon": -95.090472,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 140,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/3",
+      "name": "Oakwood Food Bank",
+      "type": "food_bank",
+      "lat": 29.835621,
+      "lon": -95.479371,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 1010,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/4",
+      "name": "Bluebonnet Food Pantry",
+      "type": "food_pantry",
+      "lat": 30.016294,
+      "lon": -95.540282,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 350,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "dry"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/5",
+      "name": "Lakeview Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 29.943312,
+      "lon": -95.131248,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 340,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/6",
+      "name": "Northgate Family Shelter",
+      "type": "shelter",
+      "lat": 29.999591,
+      "lon": -95.162798,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 180,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/7",
+      "name": "Cedar Community Center",
+      "type": "community_centre",
+      "lat": 29.825636,
+      "lon": -95.173582,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 120,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/8",
+      "name": "Magnolia Food Bank",
+      "type": "food_bank",
+      "lat": 29.824479,
+      "lon": -95.736377,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 1120,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/9",
+      "name": "Oakwood Food Pantry",
+      "type": "food_pantry",
+      "lat": 29.63045,
+      "lon": -95.149888,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 380,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/10",
+      "name": "Bluebonnet Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 29.782039,
+      "lon": -95.140034,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 330,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/houston/11",
+      "name": "Lakeview Family Shelter",
+      "type": "shelter",
+      "lat": 29.709274,
+      "lon": -95.58813,
+      "address": "Houston metro, TX (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 220,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/0",
+      "name": "Crossroads Food Pantry",
+      "type": "food_pantry",
+      "lat": 39.556798,
+      "lon": -105.136866,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 550,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/1",
+      "name": "Sunrise Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 39.657749,
+      "lon": -105.01572,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 210,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/2",
+      "name": "Prairie Family Shelter",
+      "type": "shelter",
+      "lat": 39.894149,
+      "lon": -104.978384,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 180,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/3",
+      "name": "Garland Community Center",
+      "type": "community_centre",
+      "lat": 39.772339,
+      "lon": -104.907394,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 100,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/4",
+      "name": "Trinity Food Bank",
+      "type": "food_bank",
+      "lat": 39.827379,
+      "lon": -105.01305,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 820,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/5",
+      "name": "Hillcrest Food Pantry",
+      "type": "food_pantry",
+      "lat": 39.837362,
+      "lon": -104.925754,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 480,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "dry"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/6",
+      "name": "Crossroads Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 39.662011,
+      "lon": -104.977582,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 250,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/7",
+      "name": "Sunrise Family Shelter",
+      "type": "shelter",
+      "lat": 39.749473,
+      "lon": -104.96142,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 130,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/8",
+      "name": "Prairie Community Center",
+      "type": "community_centre",
+      "lat": 39.79914,
+      "lon": -105.104574,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 90,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/9",
+      "name": "Garland Food Bank",
+      "type": "food_bank",
+      "lat": 39.713,
+      "lon": -104.97966,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 660,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/10",
+      "name": "Trinity Food Pantry",
+      "type": "food_pantry",
+      "lat": 39.589546,
+      "lon": -105.094278,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 370,
+      "hasRefrigeration": false,
+      "acceptedFoodTypes": [
+        "packaged",
+        "dry"
+      ],
+      "openDays": [
+        "Sun",
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    },
+    {
+      "id": "sample/denver/11",
+      "name": "Hillcrest Community Kitchen",
+      "type": "soup_kitchen",
+      "lat": 39.811119,
+      "lon": -105.18061,
+      "address": "Denver–Front Range, CO (approx.)",
+      "phone": "",
+      "website": "",
+      "source": "sample-fallback",
+      "osmId": null,
+      "capacityMeals": 260,
+      "hasRefrigeration": true,
+      "acceptedFoodTypes": [
+        "packaged",
+        "perishable"
+      ],
+      "openDays": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "estimated": true,
+      "estimatedFields": [
+        "capacityMeals",
+        "hasRefrigeration",
+        "acceptedFoodTypes",
+        "openDays"
+      ]
+    }
+  ]
+}
