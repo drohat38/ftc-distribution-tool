@@ -4,7 +4,7 @@
 import matchingConfig from "@config/matching.json";
 import partnersData from "@data/partners.json";
 import eventsData from "@data/events.json";
-import { allocateEvent, summarize } from "./lib/matching.js";
+import { allocateCycle } from "./lib/matching.js";
 
 export const config = matchingConfig;
 
@@ -16,9 +16,11 @@ export const eventsMeta = eventsData._meta;
 export const partnersById = Object.fromEntries(partners.map((p) => [p.id, p]));
 export const eventsById = Object.fromEntries(events.map((e) => [e.id, e]));
 
-// Precomputed allocation per event (the matching engine output).
-export const allocations = Object.fromEntries(events.map((e) => [e.id, allocateEvent(e, partners, config)]));
-export const cycleSummary = summarize(events, partners, config);
+// Time-phased allocation: partners' capacity is shared across same-date events.
+const cycle = allocateCycle(events, partners, config);
+export const allocations = cycle.allocations;
+export const partnerLoad = cycle.partnerLoad;
+export const cycleSummary = cycle.summary;
 
 // True when partners came from the synthetic fallback (Overpass unreachable at build).
 export const usingFallback = partnersMeta.mode === "fallback";

@@ -105,6 +105,7 @@ h1, h2, h3 { line-height: 1.2; }
 .drawer-hd h2 { font-size: 22px; color: var(--navy); margin: 2px 0; }
 .ev-stats { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; font-size: 13px; color: var(--ink2); }
 .overflow-note { background: #fdecea; border: 1px solid #f5c6c2; color: #8a1c14; border-radius: 10px; padding: 10px 12px; font-size: 13px; margin: 14px 0; }
+.contend-note { background: #eef2f9; border: 1px solid #d6e0f0; color: #2c3e60; border-radius: 10px; padding: 9px 12px; font-size: 12.5px; margin: 10px 0; }
 
 .alloc-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .alloc-item { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -130,6 +131,8 @@ h1, h2, h3 { line-height: 1.2; }
 .btn-xs { padding: 4px 9px; font-size: 11.5px; }
 .btn-ghost { background: #fff; color: var(--ink2); border: 1px solid var(--border); }
 .btn-ghost:hover { background: #f4f5f7; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.conf-spacer { flex: 1; }
 
 /* ---- Overflow cards ---- */
 .overflow-card { background: #fff; border: 1px solid var(--border); border-left: 4px solid var(--bad); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; box-shadow: var(--shadow); }

@@ -13,8 +13,9 @@ export default function Overflow({ onSelectEvent }) {
     <div className="screen">
       <h2 className="section-h">Overflow events ({overflowEvents.length})</h2>
       <p className="muted screen-intro">
-        Too many meals is an operations failure if partners can't absorb them. These events project more meals
-        than their eligible partners can take — each shows the shortfall and the ranked backups to cover it.
+        Too many meals is an operations failure if partners can't absorb them. Capacity is shared per service
+        date — events on the <b>same morning</b> compete for the same partners — so an event can overflow even
+        when a partner looked free in isolation. Each card shows the shortfall and the ranked backups to cover it.
       </p>
 
       {overflowEvents.length === 0 ? (

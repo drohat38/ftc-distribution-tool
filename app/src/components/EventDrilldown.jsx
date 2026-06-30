@@ -34,6 +34,12 @@ export default function EventDrilldown({ eventId, onClose }) {
           </div>
         ) : null}
 
+        {a.contended ? (
+          <div className="contend-note">
+            ⓘ Capacity was shared with other events on {fmtDate(a.date)} — some partners had less to give than their full estimate.
+          </div>
+        ) : null}
+
         <h3 className="section-h">Proposed allocation ({a.assignments.length})</h3>
         {a.assignments.length === 0 ? (
           <p className="muted">No eligible partner within range — see backups and ineligible partners below.</p>

@@ -90,12 +90,16 @@ export function allocateEvent(event, partners, cfg) {
 // distance, then type fit. In-radius eligible partners rank first; partners that fail
 // ONLY the radius test (within the expand factor) follow as flagged "expansion"
 // candidates so an overflowing event always has an actionable next step.
-export function rankBackups(event, partners, cfg, assignedIds = new Set()) {
+export function rankBackups(event, partners, cfg, assignedIds = new Set(), remainingMap = null) {
   const rankOf = (t) => (cfg.typeRank && cfg.typeRank[t]) || 0;
   const cmp = (a, b) =>
     b.freeCapacity - a.freeCapacity ||
     a.distance - b.distance ||
     rankOf(b.type) - rankOf(a.type);
+
+  // When a remaining-capacity map is supplied (cycle allocation), a partner's free
+  // capacity is what's LEFT after earlier same-date events — not its full capacity.
+  const freeOf = (p) => (remainingMap ? (remainingMap.get(p.id) ?? p.capacityMeals) : p.capacityMeals);
 
   const evals = partners
     .filter((p) => !assignedIds.has(p.id))
@@ -106,12 +110,13 @@ export function rankBackups(event, partners, cfg, assignedIds = new Set()) {
     name: e.partner.name,
     type: e.partner.type,
     distance: e.distance,
-    freeCapacity: e.partner.capacityMeals,
+    freeCapacity: freeOf(e.partner),
     hasRefrigeration: e.partner.hasRefrigeration,
     expansion
   });
 
-  const inRadius = evals.filter((e) => e.eligible).map((e) => toRow(e, false)).sort(cmp);
+  // In-radius backups must have capacity left to be useful.
+  const inRadius = evals.filter((e) => e.eligible && freeOf(e.partner) > 0).map((e) => toRow(e, false)).sort(cmp);
 
   const expandMax = cfg.maxRadiusMiles * (cfg.backupExpandRadiusFactor || 1.5);
   const expansion = evals
@@ -128,7 +133,7 @@ export function rankBackups(event, partners, cfg, assignedIds = new Set()) {
   return [...inRadius, ...expansion];
 }
 
-// Roll up a whole cycle for the dashboard.
+// Roll up a whole cycle for the dashboard (independent per-event allocation).
 export function summarize(events, partners, cfg) {
   const allocations = events.map((e) => allocateEvent(e, partners, cfg));
   return {
@@ -138,5 +143,104 @@ export function summarize(events, partners, cfg) {
     totalAssigned: allocations.reduce((s, a) => s + a.totalAssigned, 0),
     totalShortfall: allocations.reduce((s, a) => s + a.shortfall, 0),
     overflowCount: allocations.filter((a) => a.overflow).length
+  };
+}
+
+// ============================================================================
+// TIME-PHASED (CYCLE) ALLOCATION — the realistic model.
+//
+// A partner's capacity is per SERVICE DATE: events on the SAME date compete for the
+// same partners (a pantry can't absorb every Saturday-morning event at once), while
+// events on different dates each see the partner's capacity replenished. Within a
+// date, the most-constrained events (fewest eligible partners) are allocated first so
+// they aren't starved by larger events grabbing shared capacity.
+//
+// Returns per-event allocations (same shape as allocateEvent) plus partnerLoad
+// (committed meals per partner per date) so the UI can show contention.
+// ============================================================================
+export function allocateCycle(events, partners, cfg) {
+  const byDate = new Map();
+  for (const e of events) {
+    const d = e.date || "no-date";
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d).push(e);
+  }
+
+  const allocations = {};
+  const partnerLoad = {}; // partnerId -> { date -> committedMeals }
+
+  for (const [date, evs] of byDate) {
+    const remaining = new Map(partners.map((p) => [p.id, p.capacityMeals]));
+
+    // Most-constrained-first within the date (fewest eligible partners), then larger
+    // projected meals — so tight events get the shared capacity before big ones.
+    const order = evs
+      .map((e) => ({ e, elig: partners.reduce((n, p) => n + (evaluatePartner(p, e, cfg).eligible ? 1 : 0), 0) }))
+      .sort((a, b) => a.elig - b.elig || b.e.projectedMeals - a.e.projectedMeals)
+      .map((x) => x.e);
+
+    for (const e of order) {
+      const evals = partners.map((p) => ({ partner: p, ...evaluatePartner(p, e, cfg) }));
+      const eligible = evals
+        .filter((x) => x.eligible)
+        .sort((a, b) => a.distance - b.distance || remaining.get(b.partner.id) - remaining.get(a.partner.id));
+
+      const assignments = [];
+      let need = e.projectedMeals;
+      let contended = false;
+      for (const x of eligible) {
+        if (need <= 0) break;
+        const avail = remaining.get(x.partner.id);
+        if (avail < x.partner.capacityMeals) contended = true; // earlier same-date event used some
+        if (avail <= 0) continue;
+        const meals = Math.min(need, avail);
+        assignments.push({
+          partnerId: x.partner.id,
+          name: x.partner.name,
+          type: x.partner.type,
+          distance: x.distance,
+          capacityMeals: x.partner.capacityMeals,
+          remainingBefore: avail,
+          meals
+        });
+        remaining.set(x.partner.id, avail - meals);
+        need -= meals;
+        partnerLoad[x.partner.id] = partnerLoad[x.partner.id] || {};
+        partnerLoad[x.partner.id][date] = (partnerLoad[x.partner.id][date] || 0) + meals;
+      }
+
+      const shortfall = Math.max(0, need);
+      const assignedIds = new Set(assignments.map((a) => a.partnerId));
+      allocations[e.id] = {
+        eventId: e.id,
+        date,
+        projectedMeals: e.projectedMeals,
+        totalAssigned: e.projectedMeals - shortfall,
+        shortfall,
+        overflow: shortfall > 0,
+        contended,
+        assignments,
+        eligibleCount: eligible.length,
+        ineligible: evals
+          .filter((x) => !x.eligible)
+          .sort((a, b) => a.distance - b.distance)
+          .map((x) => ({ partnerId: x.partner.id, name: x.partner.name, type: x.partner.type, distance: x.distance, reasons: x.reasons })),
+        backups: rankBackups(e, partners, cfg, assignedIds, remaining)
+      };
+    }
+  }
+
+  const list = Object.values(allocations);
+  return {
+    allocations,
+    partnerLoad,
+    summary: {
+      eventCount: events.length,
+      totalProjected: events.reduce((s, e) => s + e.projectedMeals, 0),
+      totalAssigned: list.reduce((s, a) => s + a.totalAssigned, 0),
+      totalShortfall: list.reduce((s, a) => s + a.shortfall, 0),
+      overflowCount: list.filter((a) => a.overflow).length,
+      contendedCount: list.filter((a) => a.contended).length
+    }
   };
 }

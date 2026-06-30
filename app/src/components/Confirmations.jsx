@@ -3,6 +3,7 @@ import { events, allocations, eventsById, partnersById } from "../data.js";
 import { useStatus } from "../store.jsx";
 import { fmtInt, fmtDate, typeLabel, STATUS_LABEL, STATUS_COLOR } from "../format.js";
 import StatusControl from "./StatusControl.jsx";
+import { buildConfirmedLinks, toCsv, download } from "../exportLinks.js";
 
 // Screen 5 — confirmations. Every proposed (event, partner) pair — from the engine's
 // allocation plus any backups assigned in the overflow view — with its lifecycle
@@ -55,6 +56,18 @@ export default function Confirmations({ onSelectEvent }) {
           </span>
         ))}
         <span className="conf-pill">Total: <b>{counts.total}</b></span>
+        <span className="conf-spacer" />
+        <button
+          className="btn btn-xs"
+          disabled={counts.confirmed + counts.delivered === 0}
+          title="Export confirmed matches in the EventPartnerLinks shape for the internal tool"
+          onClick={() => {
+            const rows = buildConfirmedLinks(status.map);
+            if (rows.length) download("confirmed-links.csv", toCsv(rows));
+          }}
+        >
+          ⤓ Export confirmed → internal tool ({counts.confirmed + counts.delivered})
+        </button>
         <button className="btn btn-xs btn-ghost" onClick={() => status.reset()}>Reset all</button>
       </div>
 

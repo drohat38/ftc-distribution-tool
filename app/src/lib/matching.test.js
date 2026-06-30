@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluatePartner, allocateEvent, rankBackups, summarize } from "./matching.js";
+import { evaluatePartner, allocateEvent, rankBackups, summarize, allocateCycle } from "./matching.js";
 import cfg from "@config/matching.json";
 
 // Small explicit fixtures so the engine's behavior is asserted deterministically,
@@ -88,6 +88,36 @@ describe("radius exclusion", () => {
     const r = evaluatePartner(partner({ lat: 34.0, lon: -97.0 }), event, cfg); // ~76 mi
     expect(r.eligible).toBe(false);
     expect(r.reasons.join()).toMatch(/radius/i);
+  });
+});
+
+describe("time-phased cycle allocation", () => {
+  const one = (over) => partner({ id: "only", capacityMeals: 300, lat: 32.9, lon: -97.0, ...over });
+
+  it("same-date events compete for one partner's capacity (contention → overflow)", () => {
+    const partners = [one()];
+    const events = [
+      { id: "e1", date: "2026-07-04", lat: 32.9, lon: -97.0, projectedMeals: 200, needsRefrigeration: false },
+      { id: "e2", date: "2026-07-04", lat: 32.9, lon: -97.0, projectedMeals: 200, needsRefrigeration: false }
+    ];
+    const { allocations, summary } = allocateCycle(events, partners, cfg);
+    // The shared partner only has 300 meals that morning, not 600.
+    expect(allocations.e1.totalAssigned + allocations.e2.totalAssigned).toBe(300);
+    expect(allocations.e1.overflow || allocations.e2.overflow).toBe(true);
+    expect(summary.overflowCount).toBe(1);
+  });
+
+  it("the same partner serves both when events are on different dates (replenish)", () => {
+    const partners = [one()];
+    const events = [
+      { id: "e1", date: "2026-07-04", lat: 32.9, lon: -97.0, projectedMeals: 200, needsRefrigeration: false },
+      { id: "e2", date: "2026-07-11", lat: 32.9, lon: -97.0, projectedMeals: 200, needsRefrigeration: false }
+    ];
+    const { allocations } = allocateCycle(events, partners, cfg);
+    expect(allocations.e1.totalAssigned).toBe(200);
+    expect(allocations.e2.totalAssigned).toBe(200);
+    expect(allocations.e1.overflow).toBe(false);
+    expect(allocations.e2.overflow).toBe(false);
   });
 });
 

@@ -65,7 +65,9 @@ the real rendered partner/event markers.)*
    shortfall and a **ranked backup list**; assign a backup in one click.
 5. **Confirmations** — the pending list with simulated **"send reminder"** and **"mark
    confirmed"** (lifecycle: proposed → reminder sent → confirmed → delivered), saved to
-   `localStorage`. No real outreach ever happens.
+   `localStorage`. No real outreach ever happens. **Export confirmed matches** downloads an
+   `EventPartnerLinks`-shaped CSV (keyed by `EventID` + `PartnerID`) to hand to the internal
+   tool — see [`src/exportLinks.js`](src/exportLinks.js).
 
 ---
 
@@ -81,7 +83,12 @@ auditable. Nothing is hardcoded per event.
   `packaged` meals).
 - **Allocation** (`allocateEvent`): fill `projectedMeals` greedily across eligible
   partners, **closest first** then larger capacity, stopping once filled.
-- **Overflow**: if eligible capacity can't cover the meals, the remainder is the
+- **Time-phased capacity** (`allocateCycle`): the realistic model the app uses — a
+  partner's capacity is per **service date**, so events on the *same morning* compete for
+  the same partners (different dates replenish). The most-constrained events (fewest
+  eligible partners) are filled first. This is why 14 events overflow once you account for
+  same-Saturday contention, not 2.
+- **Overflow**: if available capacity can't cover the meals, the remainder is the
   **shortfall** and the event is flagged.
 - **Ranked backups** (`rankBackups`): partners not already assigned, ranked by **free
   capacity → distance → type fit**. In-radius partners rank first; partners that fail
@@ -96,12 +103,14 @@ cd app && npm test
 ```
 
 [`src/lib/matching.test.js`](src/lib/matching.test.js) covers the two required cases plus
-others (9 tests):
+others (11 tests):
 
 - **overflow → ranked backups** — eligible capacity < projected meals ⇒ shortfall flagged,
   closest-first allocation, and the out-of-radius partner surfaced as an expansion backup;
 - **refrigeration exclusion** — a fridge-needing event excludes no-fridge partners (and the
-  same partner is eligible when the event doesn't need cold storage).
+  same partner is eligible when the event doesn't need cold storage);
+- **time-phased contention** — two same-date events share one partner's capacity (the second
+  overflows), and the partner serves both when the events are on different dates.
 
 ---
 
@@ -239,9 +248,17 @@ matching engine, tests, React UI, and deploy config. A human should review the m
 rules and confirm any partner before relying on it operationally — the data is public
 candidates with **estimated** operational fields, not a verified partner list.
 
-## Planned (not built)
+## Roadmap
 
-- Replace the sample fallback with live OSM data (run the fetch script on an open network).
-- Persist confirmations to a real backend instead of `localStorage`.
-- Bridge confirmed matches into the internal Apps Script tool by `EventID`.
-- Let an operator tune `maxRadiusMiles` / weights from the UI.
+**Done in this build:** time-phased (per-service-date) capacity contention, and a
+confirmed-match **export** to the internal tool (`EventPartnerLinks` CSV by `EventID`).
+
+**Planned / needs an open network or a backend:**
+
+- Replace the sample fallback with **live OSM data** (run the fetch script on an open
+  network — blocked only in the build sandbox).
+- **Live deploy** on Cloudflare Pages (one-time project setup — see [Deploy](#deploy)).
+- Persist confirmations + two-way sync with the internal tool (instead of `localStorage`
+  + one-way CSV export).
+- In-UI tuning of `maxRadiusMiles` / weights (the engine already reads them from
+  `config/matching.json`).
