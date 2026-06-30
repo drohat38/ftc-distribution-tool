@@ -699,16 +699,18 @@
 
   <script>
     // Google Maps API key bootstrap — SAME pattern as the event map.
-    //  - The repo is PRIVATE, so the referrer-restricted key is committed here in
-    //    FALLBACK_KEY. (A Maps JS key is a client-side key anyway — it's visible in
-    //    every visitor's browser; the real protection is the HTTP referrer
-    //    restriction on the key, locked to this site's URL — not secrecy.)
+    //  - A Maps JS key is a client-side key: it ships to every visitor's browser, so
+    //    its real protection is the HTTP referrer restriction on the key (locked to
+    //    this site's URL in Google Cloud Console), NOT secrecy.
+    //  - HOWEVER: this FALLBACK_KEY was committed when this repo was PRIVATE. The repo
+    //    is now PUBLIC — ROTATE this key in Google Cloud Console and keep its referrer
+    //    allowlist tight. (Prefer passing the key via ?k= instead of committing it.)
     //  - ?k=YOUR_KEY in the URL overrides FALLBACK_KEY (handy for local testing).
     //  - The key MUST allow this site's referrer in Google Cloud Console:
     //    https://ftc-distribution-tool.pages.dev/*  (+ localhost/127.0.0.1).
     //    Needs Maps JavaScript API enabled. (No Geocoding at runtime — coords cached.)
     (function () {
-      var FALLBACK_KEY = "AIzaSyC1DTu9haC6ueax_cxxZ5zZNPQGC57A8uU";   // referrer-restricted; private repo
+      var FALLBACK_KEY = "AIzaSyC1DTu9haC6ueax_cxxZ5zZNPQGC57A8uU";   // referrer-restricted browser key — ROTATE (repo is now public)
       var key = new URLSearchParams(window.location.search).get("k") || FALLBACK_KEY;
       if (!key) {
         // No key at all: show the setup message instead of a silent blank map.
