@@ -1,0 +1,14 @@
+{
+  "_comment": "Runtime tunables for the matching engine (app/src/lib/matching.js). Exposed on purpose so the allocation rules are auditable. Edit here, not in code.",
+  "maxRadiusMiles": 25,
+  "requiredFoodType": "packaged",
+  "backupExpandRadiusFactor": 1.6,
+  "typeRank": {
+    "food_bank": 5,
+    "food_pantry": 4,
+    "soup_kitchen": 3,
+    "shelter": 2,
+    "community_centre": 1,
+    "other": 0
+  }
+}

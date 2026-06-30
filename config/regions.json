@@ -1,0 +1,9 @@
+{
+  "_comment": "Target regions for partner sourcing. DERIVED FROM THE REAL FTC PUBLIC EVENT DATA (reference/events-sample.csv — the snapshot of the sibling feed-the-city-event-map's published Google Sheet). Each region is a metro that contains one or more real FTC events. bbox = [south, west, north, east] in WGS84. The fetch script (scripts/fetch-partners.mjs) queries the OpenStreetMap Overpass API once per region. Add regions here to expand coverage.",
+  "regions": [
+    { "id": "dfw",     "name": "Dallas–Fort Worth metro, TX", "center": [32.85, -96.95], "bbox": [32.40, -97.60, 33.45, -96.10] },
+    { "id": "austin",  "name": "Austin metro, TX",            "center": [30.30, -97.74], "bbox": [30.05, -98.00, 30.60, -97.50] },
+    { "id": "houston", "name": "Houston metro, TX",           "center": [29.85, -95.40], "bbox": [29.55, -95.85, 30.20, -95.00] },
+    { "id": "denver",  "name": "Denver–Front Range, CO",      "center": [39.80, -105.05], "bbox": [39.50, -105.25, 40.05, -104.85] }
+  ]
+}
