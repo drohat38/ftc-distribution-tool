@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Feed the City — Saturday Overflow Roster (concept)</title>
+  <style>
+    :root{
+      --orange:#FF6500; --orange-dk:#d4541a; --navy:#003366;
+      --ink:#1f2430; --ink2:#3c4250; --ink3:#697084; --line:#e4e7ee; --bg:#f4f6f9;
+      --good:#1e8e3e; --bad:#c5221f; --cold:#0E7C7B;
+      --shadow:0 1px 2px rgba(20,30,60,.08),0 4px 14px rgba(20,30,60,.08);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:"Segoe UI",Roboto,system-ui,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+    button,input,select{font:inherit}
+    a{color:var(--navy)}
+
+    .topbar{display:flex;align-items:center;gap:12px;background:var(--navy);color:#fff;padding:11px 18px}
+    .logo{width:38px;height:38px;border-radius:9px;background:var(--orange);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .topbar h1{font-size:18px}
+    .topbar .sub{font-size:12px;color:#c3d4ea;margin-top:1px}
+    .topbar .grow{flex:1}
+    .topbar .maplink{color:#cfe0f2;font-size:12.5px;text-decoration:none;white-space:nowrap}
+    .topbar .maplink:hover{text-decoration:underline}
+
+    .banner{background:#fff4e8;color:#7a3d00;border-bottom:1px solid #f3d9bd;padding:8px 18px;font-size:12.5px}
+    .banner b{color:#5a2d00}
+
+    .wrap{max-width:920px;margin:0 auto;padding:18px}
+    .lead{color:var(--ink2);font-size:14px;margin-bottom:14px}
+    .card{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:16px 18px;margin-bottom:16px}
+    h2{font-size:15px;color:var(--navy);margin-bottom:4px}
+    .hint{font-size:12.5px;color:var(--ink3);margin-bottom:12px}
+
+    .controls{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
+    .field{display:flex;flex-direction:column;gap:5px}
+    .field label{font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink3)}
+    select,input[type=number],input[type=text]{padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;min-width:150px}
+    input[type=number]{width:130px}
+
+    /* Plan */
+    .plan-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 10px}
+    .plan-state{font-weight:700;font-size:15px}
+    .plan-state.ok{color:var(--good)} .plan-state.short{color:var(--bad)}
+    .meter{height:10px;background:#eef0f4;border-radius:999px;overflow:hidden;margin:8px 0 14px}
+    .meter > span{display:block;height:100%;background:var(--orange)}
+    .step{display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:11px;margin:8px 0}
+    .step .n{width:26px;height:26px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+    .step .body{flex:1;min-width:0}
+    .step .nm{font-weight:600}
+    .step .meta{font-size:12px;color:var(--ink3)}
+    .step .take{font-weight:700;color:var(--navy);white-space:nowrap}
+    .call{background:var(--orange);color:#fff;border:0;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;text-decoration:none;white-space:nowrap}
+    .call:hover{background:var(--orange-dk)}
+    .gap-note{background:#fdecea;border:1px solid #f5c6c2;color:#8a1c14;border-radius:10px;padding:10px 12px;font-size:13px;margin-top:8px}
+    .covered-note{background:#e9f6ee;border:1px solid #bfe3cb;color:#13632c;border-radius:10px;padding:10px 12px;font-size:13px;margin-top:8px}
+
+    /* Roster */
+    .row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #eef0f4}
+    .row:first-child{border-top:0}
+    .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+    .row .nm{font-weight:600}
+    .row .meta{font-size:12px;color:var(--ink3)}
+    .row .grow{flex:1;min-width:0}
+    .pill{font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px;white-space:nowrap}
+    .pill.confirmed{background:#e6f4ea;color:var(--good)}
+    .pill.contacted{background:#fff0e0;color:var(--orange-dk)}
+    .pill.lead{background:#eef1f6;color:var(--ink3)}
+    .pill.cold{background:#e3f1f0;color:var(--cold)}
+    .pill.same{background:#fdeee2;color:var(--orange-dk)}
+    .mini{background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:12px;color:var(--ink2)}
+    .mini:hover{background:#f4f6f9}
+    .stage-h{font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink3);margin:14px 0 2px}
+    .empty{color:var(--ink3);font-size:13px;padding:10px 0}
+
+    .addgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+    .addgrid .full{grid-column:1 / -1}
+    .addbtn{background:var(--navy);color:#fff;border:0;border-radius:9px;padding:9px 14px;font-weight:600}
+    details summary{cursor:pointer;font-size:13px;color:var(--navy);font-weight:600;padding:4px 0}
+    .foot{max-width:920px;margin:0 auto;padding:8px 18px 30px;color:var(--ink3);font-size:12px}
+    .foot a{color:var(--ink3)}
+    .seedbtn{background:none;border:0;color:var(--ink3);text-decoration:underline;font-size:12px;cursor:pointer}
+    @media(max-width:620px){ .addgrid{grid-template-columns:1fr} .controls{flex-direction:column;align-items:stretch} select,input{min-width:0;width:100%} }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M11 9H9V2H7v7H5V2H3v7c0 2.12 1.66 3.84 3.75 3.97V22h2.5v-9.03C11.34 12.84 13 11.12 13 9V2h-2v7zm5-3v8h2.5v8H21V2c-2.76 0-5 2.24-5 4z"/></svg></div>
+    <div>
+      <h1>Saturday Overflow Roster</h1>
+      <div class="sub">When your usual place is full — who else, open Saturday, can take the rest?</div>
+    </div>
+    <div class="grow"></div>
+    <a class="maplink" href="./index.html">← Distribution map</a>
+  </div>
+
+  <div class="banner">
+    <b>Concept prototype · demo data.</b> The places below are fictional examples to show the idea — not real commitments. In the real tool, candidates are seeded from public directories (Feeding America / AmpleHarvest / Google) filtered to “open Saturday,” and capacities come from leaders confirming them. Edits you make are saved only in this browser.
+  </div>
+
+  <div class="wrap">
+    <p class="lead">A leader finishes packing more meals than the primary partner can take. Instead of calling around cold, open the roster: it shows who in this city has <b>said yes to prepared food on a Saturday</b>, <b>how many</b> they take, and builds a <b>coverage plan</b> for today’s overflow.</p>
+
+    <!-- STEP 1+2: plan -->
+    <div class="card">
+      <h2>Place today’s food</h2>
+      <div class="hint">Pick your city and how many meals you have to place. The plan cascades across confirmed Saturday partners until it’s covered.</div>
+      <div class="controls">
+        <div class="field"><label for="city">City / event</label><select id="city"></select></div>
+        <div class="field"><label for="meals">Meals to place</label><input id="meals" type="number" min="0" step="10" value="250"></div>
+      </div>
+
+      <div id="plan" style="margin-top:14px"></div>
+    </div>
+
+    <!-- STEP 3: roster -->
+    <div class="card">
+      <div class="plan-head"><h2 id="roster-title">City roster</h2><button class="mini" id="reset" title="Clear demo edits in this browser">Reset demo</button></div>
+      <div class="hint">Every place a leader has logged here, by trust stage. <b>Confirmed</b> places feed the plan above. Confirm a place after you call it — that’s how the roster grows so the next leader doesn’t start from zero.</div>
+      <div id="roster"></div>
+
+      <details style="margin-top:12px">
+        <summary>+ Add a place you called</summary>
+        <div class="addgrid">
+          <div class="field full"><label>Name</label><input type="text" id="a_name" placeholder="e.g. Hope Center"></div>
+          <div class="field"><label>Type</label>
+            <select id="a_type"><option>Food pantry</option><option>Soup kitchen</option><option>Shelter</option><option>Community center</option><option>Church</option><option>Other</option></select>
+          </div>
+          <div class="field"><label>Handles prepared food by</label>
+            <select id="a_pathway"><option value="serve-same-day">Serving same day</option><option value="cold-store">Refrigerating &amp; redistributing</option><option value="unknown">Not sure yet</option></select>
+          </div>
+          <div class="field"><label>Open Saturday</label><input type="text" id="a_hours" placeholder="e.g. Sat 9–11am"></div>
+          <div class="field"><label>Meals they’ll take</label><input type="number" id="a_max" min="0" step="10" placeholder="e.g. 80"></div>
+          <div class="field full"><label>Phone</label><input type="text" id="a_phone" placeholder="(940) 555-0123"></div>
+          <div class="full"><button class="addbtn" id="a_save">Save to roster (confirmed)</button></div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <div class="foot">
+    Concept for Feed the City (Tango Charities). The map and this roster are two views of the same idea: where food <i>goes</i>.
+    <button class="seedbtn" id="loadDemo">Load demo edits</button>
+  </div>
+
+<script>
+"use strict";
+// ---- Demo seed data (FICTIONAL — illustrative only) -------------------------------
+const CITIES = ["Denton","Dallas (The Original)","Plano","Arlington","Frisco","McKinney","Austin (Zilker)","Houston","Littleton"];
+const SEED = {
+  "Denton":[
+    {id:"dn1",name:"Riverside Community Kitchen",type:"Soup kitchen",pathway:"serve-same-day",hours:"Sat 9–11am",max:120,stage:"confirmed",last:"2026-06-07",phone:"(940) 555-0142"},
+    {id:"dn2",name:"Northgate Food Pantry",type:"Food pantry",pathway:"cold-store",hours:"Sat 8am–12pm",max:90,stage:"confirmed",last:"2026-05-31",phone:"(940) 555-0188"},
+    {id:"dn3",name:"Cornerstone Shelter",type:"Shelter",pathway:"serve-same-day",hours:"Sat 7–10am",max:60,stage:"contacted",last:"",phone:"(940) 555-0110"},
+    {id:"dn4",name:"Bluebonnet Outreach",type:"Food pantry",pathway:"unknown",hours:"unknown",max:null,stage:"lead",last:"",phone:""}
+  ],
+  "Dallas (The Original)":[
+    {id:"da1",name:"Cedar Springs Meal Center",type:"Soup kitchen",pathway:"serve-same-day",hours:"Sat 8–11am",max:200,stage:"confirmed",last:"2026-06-07",phone:"(214) 555-0171"},
+    {id:"da2",name:"Eastside Family Pantry",type:"Food pantry",pathway:"cold-store",hours:"Sat 9am–1pm",max:140,stage:"confirmed",last:"2026-05-24",phone:"(214) 555-0133"},
+    {id:"da3",name:"Hope Bridge Shelter",type:"Shelter",pathway:"serve-same-day",hours:"Sat 7–9am",max:80,stage:"contacted",last:"",phone:"(214) 555-0199"}
+  ],
+  "Plano":[
+    {id:"pl1",name:"Prairie Creek Pantry",type:"Food pantry",pathway:"cold-store",hours:"Sat 9–11am",max:110,stage:"confirmed",last:"2026-06-07",phone:"(972) 555-0150"},
+    {id:"pl2",name:"Westside Community Center",type:"Community center",pathway:"serve-same-day",hours:"Sat 10am–12pm",max:70,stage:"lead",last:"",phone:""}
+  ],
+  "Arlington":[
+    {id:"ar1",name:"Lincoln Square Soup Kitchen",type:"Soup kitchen",pathway:"serve-same-day",hours:"Sat 8–10am",max:90,stage:"confirmed",last:"2026-05-31",phone:"(817) 555-0124"}
+  ]
+  // Frisco / McKinney / Austin / Houston / Littleton intentionally empty — shows the "build it up" state.
+};
+
+const PATHWAY_LABEL={ "serve-same-day":"serves same day", "cold-store":"refrigerates &amp; redistributes", "unknown":"prepared-food fit unknown" };
+const LS_KEY="ftc-roster-demo-v1";
+
+// ---- State / storage --------------------------------------------------------------
+function loadEdits(){ try{return JSON.parse(localStorage.getItem(LS_KEY))||{};}catch(e){return {};} }
+function saveEdits(o){ try{localStorage.setItem(LS_KEY,JSON.stringify(o));}catch(e){} }
+let edits = loadEdits(); // { city: { added:[...], patch:{id:{max,last,stage}} } }
+
+function rosterFor(city){
+  const base=(SEED[city]||[]).map(p=>Object.assign({},p));
+  const e=edits[city]||{};
+  const patched=base.map(p=>Object.assign(p,(e.patch&&e.patch[p.id])||{}));
+  const added=(e.added||[]).map(p=>Object.assign({},p));
+  return patched.concat(added);
+}
+function patch(city,id,obj){ edits[city]=edits[city]||{}; edits[city].patch=edits[city].patch||{}; edits[city].patch[id]=Object.assign(edits[city].patch[id]||{},obj); saveEdits(edits); render(); }
+function addPlace(city,p){ edits[city]=edits[city]||{}; edits[city].added=edits[city].added||[]; edits[city].added.push(p); saveEdits(edits); render(); }
+
+function todayStr(){ const d=new Date(); return d.toISOString().slice(0,10); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function telHref(p){ return "tel:"+String(p||"").replace(/[^0-9+]/g,""); }
+
+// ---- Render -----------------------------------------------------------------------
+const $=id=>document.getElementById(id);
+
+function render(){
+  const city=$("city").value;
+  const meals=Math.max(0, parseInt($("meals").value,10)||0);
+  const roster=rosterFor(city);
+  $("roster-title").textContent=city+" roster";
+  renderPlan(city,meals,roster);
+  renderRoster(city,roster);
+}
+
+function renderPlan(city,meals,roster){
+  const confirmed=roster.filter(p=>p.stage==="confirmed" && p.max>0)
+    .sort((a,b)=>b.max-a.max);
+  let remaining=meals, steps=[], i=0;
+  for(const p of confirmed){
+    if(remaining<=0) break;
+    const take=Math.min(remaining,p.max);
+    steps.push({p,take,n:++i});
+    remaining-=take;
+  }
+  const covered=remaining<=0 && meals>0;
+  const placed=meals-Math.max(0,remaining);
+  const pct=meals?Math.min(100,Math.round(placed/meals*100)):0;
+
+  let html="";
+  if(meals===0){ html='<p class="hint">Enter how many meals you need to place.</p>'; $("plan").innerHTML=html; return; }
+
+  html+='<div class="plan-head"><span class="plan-state '+(covered?"ok":"short")+'">'+
+        (covered?("✅ Covered — "+placed+" of "+meals+" meals across "+steps.length+" place"+(steps.length===1?"":"s")):
+                 ("⚠ "+placed+" of "+meals+" placed — short "+remaining))+
+        '</span></div>';
+  html+='<div class="meter"><span style="width:'+pct+'%"></span></div>';
+
+  if(!steps.length){
+    html+='<div class="gap-note">No confirmed Saturday partners in '+esc(city)+' yet. Call a place below (or a candidate lead), confirm how many it takes, and it’ll start covering your overflow.</div>';
+  }
+  steps.forEach(s=>{
+    const p=s.p;
+    html+='<div class="step"><div class="n">'+s.n+'</div><div class="body">'+
+      '<div class="nm">'+esc(p.name)+'</div>'+
+      '<div class="meta">'+esc(p.type)+' · '+esc(p.hours||"hours unknown")+' · '+PATHWAY_LABEL[p.pathway]+'</div>'+
+      '</div><div class="take">take '+s.take+'</div>'+
+      (p.phone?('<a class="call" href="'+telHref(p.phone)+'">Call</a>'):'')+
+      '</div>';
+  });
+
+  if(covered){
+    html+='<div class="covered-note">Your overflow is covered. Tap <b>Call</b> to confirm each place can take its share today, then mark them in the roster.</div>';
+  }else if(steps.length){
+    const next=roster.filter(p=>p.stage!=="confirmed"||!(p.max>0));
+    html+='<div class="gap-note">Still <b>'+remaining+'</b> meals to place. '+
+      (next.length? ('Call one of the <b>'+next.length+'</b> contacted places / leads below and confirm it, or add a new place.'):'Add another place you can call.')+
+      '</div>';
+  }
+  $("plan").innerHTML=html;
+}
+
+function stageDot(stage){ return stage==="confirmed"?"var(--good)":stage==="contacted"?"var(--orange)":"#aab1c2"; }
+
+function renderRoster(city,roster){
+  const order={confirmed:0,contacted:1,lead:2};
+  const groups={confirmed:[],contacted:[],lead:[]};
+  roster.forEach(p=>{ (groups[p.stage]||groups.lead).push(p); });
+  let html="";
+  const labels={confirmed:"Confirmed — feeds your plan",contacted:"Contacted — confirm to activate",lead:"Leads — not called yet"};
+  ["confirmed","contacted","lead"].forEach(stage=>{
+    const list=groups[stage];
+    html+='<div class="stage-h">'+labels[stage]+' ('+list.length+')</div>';
+    if(!list.length){ html+='<div class="empty">—</div>'; return; }
+    list.sort((a,b)=>(b.max||0)-(a.max||0));
+    list.forEach(p=>{
+      const pw=p.pathway==="cold-store"?'<span class="pill cold">cold-store</span>':p.pathway==="serve-same-day"?'<span class="pill same">same-day</span>':'';
+      html+='<div class="row"><span class="dot" style="background:'+stageDot(p.stage)+'"></span>'+
+        '<div class="grow"><div class="nm">'+esc(p.name)+'</div>'+
+        '<div class="meta">'+esc(p.type)+' · '+esc(p.hours||"hours unknown")+(p.max>0?(' · takes ~'+p.max+' meals'):'')+(p.last?(' · confirmed '+esc(p.last)):'')+'</div></div>'+
+        pw+'<span class="pill '+p.stage+'">'+p.stage+'</span>'+
+        (p.phone?('<a class="call" href="'+telHref(p.phone)+'">Call</a>'):'')+
+        '<button class="mini" data-confirm="'+p.id+'" data-city="'+esc(city)+'">'+(p.stage==="confirmed"?"Update":"Confirm")+'</button>'+
+        '</div>';
+    });
+  });
+  $("roster").innerHTML=html;
+
+  // wire confirm/update buttons
+  document.querySelectorAll("[data-confirm]").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      const id=btn.getAttribute("data-confirm"); const c=city;
+      const cur=rosterFor(c).find(x=>x.id===id)||{};
+      const n=prompt("How many meals did "+(cur.name||"this place")+" say it can take on a Saturday?", cur.max||"");
+      if(n===null) return;
+      const max=Math.max(0,parseInt(n,10)||0);
+      patch(c,id,{max:max,stage:"confirmed",last:todayStr()});
+    });
+  });
+}
+
+// ---- Wire up ----------------------------------------------------------------------
+function initCities(){ const sel=$("city"); CITIES.forEach(c=>{ const o=document.createElement("option"); o.value=c;o.textContent=c+(SEED[c]?"":" (no roster yet)"); sel.appendChild(o); }); }
+initCities();
+$("city").addEventListener("change",render);
+$("meals").addEventListener("input",render);
+$("reset").addEventListener("click",()=>{ if(confirm("Clear demo edits in this browser?")){ edits={};saveEdits(edits);render(); }});
+$("loadDemo").addEventListener("click",()=>{ $("city").value="Denton"; $("meals").value=250; render(); window.scrollTo({top:0,behavior:"smooth"}); });
+$("a_save").addEventListener("click",()=>{
+  const name=$("a_name").value.trim(); if(!name){ alert("Add a name."); return; }
+  const p={ id:"u"+Date.now(), name:name, type:$("a_type").value, pathway:$("a_pathway").value,
+            hours:$("a_hours").value.trim(), max:Math.max(0,parseInt($("a_max").value,10)||0),
+            stage:"confirmed", last:todayStr(), phone:$("a_phone").value.trim() };
+  addPlace($("city").value,p);
+  ["a_name","a_hours","a_max","a_phone"].forEach(id=>$(id).value="");
+});
+
+render();
+</script>
+</body>
+</html>
