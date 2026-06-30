@@ -14,6 +14,11 @@ The two link by `EventID` (stable UUIDs already used by the event map — see
 > internal. It is **never** written to a published CSV and **never** served on a
 > public URL. See [`AGENTS.md`](AGENTS.md) and [`PRD.md`](PRD.md).
 
+> 📖 **New here?** [`docs/COMPLETE_GUIDE.md`](docs/COMPLETE_GUIDE.md) is the single
+> exhaustive reference — purpose, audience, architecture, every tab, every column,
+> every menu action and function, the monthly cycle, the public map, automation,
+> configuration, and every nuance.
+
 ## Two surfaces
 
 The tool is **two surfaces over one set of partner data**:
@@ -95,6 +100,7 @@ Do **not** introduce Supabase, Airtable, or Salesforce. This is the Tier A build
 │   ├── FindPantriesDialog.html                                    # Nearby-pantry recommender (+ backup link)
 │   └── .clasp.json.example# Copy to .clasp.json and add your scriptId
 ├── docs/
+│   ├── COMPLETE_GUIDE.md  # The exhaustive reference — purpose, audience, every tab/field/function/nuance
 │   ├── DATA_MODEL.md      # Column-by-column schema: Partners, Links, Leaders, Events, public tabs, CapacityChecks
 │   ├── PUBLIC_MAP.md      # Phase 3b deploy guide (published CSVs + Cloudflare Pages)
 │   └── SMOKE_TEST.md      # Human smoke-test checklist (run after clasp push)
