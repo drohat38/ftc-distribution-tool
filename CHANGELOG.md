@@ -6,6 +6,24 @@ project will adopt [Semantic Versioning](https://semver.org/) once it ships.
 
 ## [Unreleased]
 
+### Docs — public-repo readiness pass (no code/behavior change)
+
+The repository is **public**, but several docs/comments still described it as private.
+This pass reconciles the framing without changing any application behavior.
+
+- **`README.md`** rewritten: honest *Built vs planned* status table, a precise
+  *Privacy & data boundaries* section (exactly what the public map does and does not
+  expose), local-run instructions for both surfaces, and a *License* note (none yet →
+  all-rights-reserved by default).
+- **Corrected the "repo is PRIVATE" claims** in `src/index.html` and
+  `docs/PUBLIC_MAP.md`, which were the rationale for committing the Maps key. The repo
+  is public; the committed referrer-restricted Maps JS key is flagged for **rotation**.
+- Removed the now-redundant `src/.gitkeep` (the directory holds `index.html`).
+- **Verified, no leak:** `rebuildPublicView()` publishes only the non-contact subset by
+  construction, and the map reads only those columns — no `contact_*`, `agreement_*`, or
+  `last_verified` reach the public CSVs. No partner contacts, spreadsheet IDs, or
+  server-side keys are committed anywhere in the repo.
+
 ### Finish-the-app build — leaders, primary partners, reminder automation
 
 This build completes the monthly cycle: **Nick assigns a primary partner → events

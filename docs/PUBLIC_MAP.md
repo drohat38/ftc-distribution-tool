@@ -59,11 +59,13 @@ CSV (same event data), so you can leave it as-is and skip publishing
 The map needs a Google **Maps JavaScript API** key. Reuse the event map's existing
 referrer-restricted key — no new key, no new billing relationship.
 
-**The repo is PRIVATE, so the key is committed in the file** (`FALLBACK_KEY` in the
-last `<script>` of `src/index.html`). This is exactly how the event map runs. A Maps
-**JavaScript** key is a client-side key anyway — it's visible in every visitor's
+A Maps **JavaScript** key is a client-side key — it's visible in every visitor's
 browser, so its real protection is the **referrer restriction** below, not secrecy.
-A private repo just keeps it (and the internal docs) off public GitHub.
+The key currently sits in `FALLBACK_KEY` (last `<script>` of `src/index.html`).
+
+> ⚠️ **This repo is PUBLIC and the key was committed when it was private — rotate it.**
+> Regenerate the Maps key in Google Cloud Console, keep its referrer allowlist tight
+> (below), and prefer passing the new key via `?k=` rather than re-committing it.
 
 > **Why not an env-var / build-time injection?** The site is a Cloudflare **Pages**
 > project that serves `src/index.html` **as-is** (no build command). There's no
@@ -88,17 +90,17 @@ ceiling.
 
 ## Deploy — its own Cloudflare project (separate from the event map)
 
-The site is deployed as a Cloudflare project connected to this **private** GitHub
-repo, serving `src/index.html`. Current live URL:
-**`https://ftc-distribution-tool.pages.dev/`**.
+The site is deployed as a Cloudflare project connected to this GitHub repo, serving
+`src/index.html`. Current live URL: **`https://ftc-distribution-tool.pages.dev/`**.
 
 - **Production branch:** `main`. **Framework preset:** None. **Build command:**
   (blank — the file is served as-is). **Output / assets directory:** `src` — so only
   `src/` is served and the rest of the repo (apps-script, docs, PRD…) stays off the
   site.
 - `git push` to `main` auto-redeploys (~60s).
-- The repo is private, so Cloudflare needs read access to it via the Cloudflare
-  GitHub app (granted when you connected the repo). No public access required.
+- Cloudflare reads the repo via the Cloudflare GitHub app (granted when you connected
+  the repo). Note the repo is **public**, so only the non-contact published CSVs — not
+  repo visibility — keep contact data out of the map.
 
 After it's live, make sure that `pages.dev` URL is in the Maps key's referrers
 (see the Maps key section).
@@ -120,7 +122,7 @@ After it's live, make sure that `pages.dev` URL is in the Maps key's referrers
 - [ ] Ran **Rebuild public view**
 - [ ] Published `Partners_Public`, `Links_Public` (and `Events_Reference` if used) to web as CSV
 - [ ] Pasted the CSV URLs into `CONFIG` in `src/index.html`
-- [ ] Repo is **private**; key committed in `FALLBACK_KEY`
-- [ ] Cloudflare project serves `src/` from this private repo (output dir `src`)
+- [ ] Maps key set (via `?k=` or `FALLBACK_KEY`) — and **rotated**, since the repo is public
+- [ ] Cloudflare project serves `src/` from this repo (output dir `src`)
 - [ ] Added `https://ftc-distribution-tool.pages.dev/*` to the Maps key's referrers
 - [ ] Confirmed the live map renders without `?k=`
